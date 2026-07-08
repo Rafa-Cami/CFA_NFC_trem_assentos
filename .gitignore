@@ -1,1 +1,6 @@
 /pymakr.conf
+venv/
+__pycache__/
+.pytest_cache/
+whatsapp/
+*.pyc
