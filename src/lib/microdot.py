@@ -11,7 +11,7 @@ import re
 import time
 
 try:
-    import orjson as json
+    import orjson as json #type: ignore
 except ImportError:
     import json
 
