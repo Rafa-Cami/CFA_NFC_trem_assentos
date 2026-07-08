@@ -1,135 +1,45 @@
-# CFA_wearable_protecao_pessoal
-Projeto em Grupo para a disciplina de Computação Física Aplicada
+# Projeto de Cartões de identificação para pessoas com direito a assentos preferenciais
 
-# Dispositivo Wearable de Emergência para Proteção Pessoal
+O projeto de cartões de identificação, desenvolvido na disciplina de CFA, tem como objetivo desenvolver um projeto utilizando a tecnologia de NFC para realizar avisos sonoros e alertar os passageiros do vagão. 
 
-Repositório criado para a documentação do projeto de um dispositivo wearable de emergência desenvolvido para a disciplina de Computação Física e Aplicações. O projeto consiste em um dispositivo discreto, utilizável como colar, pulseira ou chaveiro, capaz de acionar um alerta de emergência, emitir um alarme sonoro e enviar a localização da usuária para contatos previamente cadastrados por meio de um aplicativo móvel.
+## Aplicação Real
 
-## 1. Introdução
+A iniciativa foi inspirada no sistema de sensores utilizado no metrô da Coreia do Sul e seu aplicativo [pinklight](https://play.google.com/store/apps/details?id=kr.doweb.pinklight&hl=pt_BR), para criar uma solução baseada em IoT que incentive os passageiros a dar lugar à mulheres grávidas no assento preferencial. Segundo o [estudo de caso](https://publicadministration.un.org/unpsa/en/Home/Case-Details-Public?PreScreeningGUID=399fae3c-5002-4a93-af5e-88691160b86c&ReadOnly=Yes), "Recentemente, como muitos passageiros ficam absortos em seus smartphones enquanto viajam de ônibus ou metrô, é possível que raramente notem uma gestante por perto. Partindo do princípio de que muitos dos passageiros que não estão grávidos, mas ocupam assentos preferenciais, estariam de fato dispostos a ceder o lugar a uma mulher caso percebessem que ela está grávida, a cidade de Busan lançou o 'Pink Light'".
 
-### I. Contextualização
+Assim, o dispositivo seria uma forma de alertar os passageiros quando devem ceder seu lugar para outro passageiro, sem necessidade de perguntar e sem que seja necessário pedir. É uma tecnologia relativamente barata de ser implementada como política pública que incentiva o bem-estar de diferentes grupos sociais com direito ao assento preferencial, como por exemplo: Pessoas com deficiência, pessoas com crianças de colo, idosos, obesos, gestantes, pessoas com restrição de mobilidade e autistas.
 
-A violência e o assédio em espaços públicos representam uma preocupação constante para muitas mulheres. Em situações de risco, nem sempre é possível utilizar o celular para pedir ajuda de forma rápida e discreta.
+## História de usuário:
 
-Nesse contexto, dispositivos vestíveis (wearables) surgem como uma alternativa tecnológica capaz de aumentar a segurança pessoal. Esses dispositivos podem ser incorporados ao cotidiano de forma discreta, permitindo o acionamento rápido de mecanismos de emergência.
+### usuário com direito ao assento preterencial
 
-O projeto proposto consiste em um wearable equipado com um botão de emergência. Quando acionado, o dispositivo envia um sinal para um aplicativo móvel conectado via Bluetooth, que obtém a localização atual do celular e a compartilha com contatos de emergência previamente cadastrados. Simultaneamente, um alarme sonoro é ativado para chamar a atenção de pessoas próximas.
-
-### II. Conceitos e Terminologia
-
-* **Wearable:** dispositivo eletrônico vestível incorporado a acessórios ou roupas.
-* **ESP32:** microcontrolador com conectividade Wi-Fi e Bluetooth integrado.
-* **Bluetooth Low Energy (BLE):** protocolo de comunicação sem fio de baixo consumo energético.
-* **GPS:** sistema global de posicionamento utilizado para determinar a localização geográfica.
-* **Buzzer:** componente eletrônico utilizado para emissão de sinais sonoros.
-* **Aplicativo móvel:** software responsável por receber os alertas do dispositivo e enviar a localização aos contatos cadastrados.
-
-## 2. Objetivos
-
-### I. Objetivo Geral
-
-Desenvolver um dispositivo wearable de emergência capaz de auxiliar pessoas em situações de risco por meio do envio rápido de alertas e compartilhamento de localização.
-
-### II. Objetivos Específicos
-
-* Desenvolver um dispositivo portátil e discreto.
-* Permitir o acionamento rápido por meio de um único botão.
-* Emitir um alerta sonoro para chamar atenção de pessoas próximas.
-* Estabelecer comunicação entre o dispositivo e um aplicativo móvel.
-* Compartilhar automaticamente a localização da usuária com contatos de emergência.
-* Criar uma solução de baixo custo utilizando componentes amplamente disponíveis.
-
-## 3. Materiais e Métodos
-
-### I. Componentes Utilizados
-
-| Quantidade | Componente               |
-| ---------- | ------------------------ |
-| 1          | ESP32 DevKit V1          |
-| 1          | Botão de emergência      |
-| 1          | Buzzer ativo             |
-| 1          | LED indicador            |
-| 1          | Bateria Li-Po 3,7V       |
-| 1          | Módulo carregador TP4056 |
-| N          | Jumpers                  |
-| 1          | Protoboard               |
-
-### II. Arquitetura do Sistema
-
-O sistema é composto por dois módulos principais:
-
-#### Módulo Wearable
-
-Responsável por:
-
-* Monitorar o botão de emergência;
-* Emitir o alerta sonoro;
-* Enviar sinal de emergência via Bluetooth.
-
-#### Aplicativo Móvel
-
-Responsável por:
-
-* Receber o sinal enviado pelo wearable;
-* Obter a localização atual do dispositivo móvel;
-* Gerar um link de localização;
-* Encaminhar mensagens para contatos de emergência.
-
-### III. Fluxo de Funcionamento
-
-1. Usuária pressiona o botão de emergência.
-2. O ESP32 identifica o acionamento.
-3. O buzzer é ativado.
-4. O ESP32 envia um alerta via Bluetooth.
-5. O aplicativo recebe o alerta.
-6. O aplicativo obtém a localização do celular.
-7. Uma mensagem contendo a localização é enviada aos contatos cadastrados.
-
-## 4. Desenvolvimento
-
-### I. Implementação do Hardware
-
-Inicialmente será desenvolvido um protótipo eletrônico utilizando protoboard para validação do circuito.
-
-O ESP32 será responsável pela leitura do botão e acionamento do buzzer. A comunicação com o aplicativo ocorrerá através de Bluetooth Low Energy (BLE).
-
-### II. Implementação do Aplicativo
-
-O aplicativo móvel será responsável pela comunicação com o wearable e pela obtenção da localização geográfica.
-
-Ao receber o alerta enviado pelo ESP32, o aplicativo gerará uma mensagem contendo:
-
-* Data e horário do acionamento;
-* Link para visualização da localização no Google Maps.
-
-### III. Integração
-
-Após a validação individual dos módulos de hardware e software, será realizada a integração completa do sistema para testes de funcionamento em tempo real.
-
-## 5. Resultados Esperados
-
-Espera-se que o dispositivo seja capaz de:
-
-* Detectar corretamente o acionamento do botão de emergência;
-* Emitir alerta sonoro imediatamente após o acionamento;
-* Estabelecer comunicação com o aplicativo móvel;
-* Compartilhar a localização da usuária em poucos segundos;
-* Operar de forma portátil e discreta.
-
-## 6. Trabalhos Futuros
-
-Como possíveis evoluções do projeto, destacam-se:
-
-* Integração com smartwatch.
-* Envio de notificações para múltiplos contatos simultaneamente.
-* Histórico de acionamentos.
-* Integração com serviços de emergência.
-* Miniaturização do hardware para uso em colares ou pulseiras.
-* Desenvolvimento de aplicativo para múltiplas plataformas.
-
-## 7. Organização do Repositório
-
-## 8. Referências
+- ao entrar no trem o usuario deve ter em mãos o acessorio (cartão ou chaveiro) que tem informações sobre o assento preferencial
+- o usuário deve encostar o acessório no dispositivo no sensor de nfc (requisito esse estar localizado com facil acesso)
+- o usuário ouvirá o anuncio de sua chegada e necessidade de liberação de assentos preferenciais
+- o usuário verá a luz acima dos assentos liberados acender
+- o usuário pode ir até o assento, necessitando possivelmente que outros passageiros deem lugar
 
 
-Google Maps Platform Documentation.
+### usuários sem acesso ao assento preferencial
+
+- ao chegar no trem, se houver um assento vazio e nao houver pessoas preferenciais usuário pode se sentar no assento preferencial
+- o usuário fica tranquilo e quando chega na proxima estação se houver um usuario que deseja usar o assento preferencial ele ouve um anúncio
+- o usuario deve se levantar, permitindo que a luz de assento livre ligue
+- o usuario com direito ao assento verá o assento livre e se sentará nele
+
+
+### preocupação com funcionalidade
+
+- importante reforçar que a implementação do projeto envolve também a mudança no comportamento do usuário. Se implementado na vida real, o sucesso do projeto depende das pessoas cederem seus assentos. 
+
+- O projeto em suas primeiras versões tem impedimentos para seu funcionamento em horários de pico. Os motivos são 
+1. limitação no número de assentos
+2. Possível lotação pode impedir o usuário de chegar ate o sensor do cartão. A lotação tambem pode impedir o usuário de enxergar a luz que sinaliza o assento livre, bem como impedir o deslocamento do usuario até lá.
+
+## Futuras Implementações:
+
+- Interação de múltiplos módulos de leitor de NFC com um só servidor no vagão
+- Mensagem mais amigável por meio de um alto falante (integrado ou não com o sistema de som do trem)
+- Diferentes meios de detecção do NFC (Cartões, chaveiros, colares)
+- Detecção avançada, por meio de sensores com maior alcance nas portas, assim não precisando de contato direto com o leitor]
+- Confirmação visual de deteção no meio (luz piscando, vibração, etc)
+- Sistema de controle para detectar se uma pessoa sentada no assento preferencial de fato necessita dele ou não (por meio de detecção no assento)
