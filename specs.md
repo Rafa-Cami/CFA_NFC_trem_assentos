@@ -19,14 +19,28 @@ Ligacoes usadas pela montagem atual:
 
 O PN532 deve estar configurado para I2C e responder no endereco `0x24`.
 
+## Estrutura Do Codigo
+
+O projeto agora fica separado por modulo, cada um com sua propria pasta `src`:
+
+- `servidor/src/`: codigo do PC/servidor TCP.
+- `ESP_NFC/src/`: codigo do ESP32 com leitor NFC PN532.
+- `ESP_Assentos/src/`: codigo do ESP32 que controla sensor/LED do assento.
+
 ## Arquivos Embarcados
 
-Copie estes arquivos da pasta `src` para a raiz do filesystem MicroPython:
+Para o ESP32 com NFC, abra `ESP_NFC/src/esp_comunicando.py` no Thonny, ajuste
+`SSID`, `PASSWORD`, `HOST` e `NFC_UUIDS`, e salve no dispositivo MicroPython
+como `main.py`.
+
+Para testar apenas o leitor NFC com buzzer, copie estes arquivos de
+`ESP_NFC/src` para a raiz do filesystem MicroPython:
 
 - `start.py`
 - `nfc_buzzer.py`
-- `pn532_i2c.py`
-- `adafruit_pn532.py`
+
+Para o ESP32 dos assentos, abra `ESP_Assentos/src/sensor_v1.py` no Thonny e
+salve no dispositivo MicroPython como `main.py`.
 
 ## Uso
 
@@ -61,8 +75,14 @@ Feche ou desconecte o backend do Thonny antes de usar `mpremote`, pois a porta
 serial nao pode ser usada por dois programas ao mesmo tempo.
 
 ```powershell
-python -m mpremote connect COM3 fs cp .\src\start.py :start.py
-python -m mpremote connect COM3 fs cp .\src\nfc_buzzer.py :nfc_buzzer.py
-python -m mpremote connect COM3 fs cp .\src\pn532_i2c.py :pn532_i2c.py
-python -m mpremote connect COM3 fs cp .\src\adafruit_pn532.py :adafruit_pn532.py
+python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_comunicando.py :main.py
+python -m mpremote connect COM3 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
+```
+
+## Servidor No PC
+
+Antes de ligar o ESP32 NFC, rode o servidor:
+
+```powershell
+python servidor\src\pc_server.py
 ```
