@@ -13,16 +13,19 @@ import socket
 import time
 from micropython import const
 
+try:
+    from esp_config import HOST, PASSWORD, SSID
+except ImportError:
+    raise RuntimeError(
+        "Missing esp_config.py. Copy esp_config.example.py and configure Wi-Fi/PC."
+    )
+
 
 # ==========================
 # Wi-Fi / PC configuration
 # ==========================
 
-SSID = "YOUR_WIFI_NAME"
-PASSWORD = "YOUR_WIFI_PASSWORD"
-
-# PC IP address and port used by servidor/src/pc_server.py
-HOST = "192.168.0.105"  # Mudar para o IP do seu PC
+# Port used by servidor/src/pc_server.py
 PORT = 5000
 
 
@@ -44,7 +47,7 @@ BUZZER_DUTY_U16 = 49152
 # Coloque aqui os UUIDs/UIDs autorizados, no mesmo formato impresso no terminal.
 # O primeiro UID da lista envia {"nfc_1": 1}, o segundo envia {"nfc_2": 1}, etc.
 NFC_UUIDS = [
-    "04:00:00:00:00:00:00",
+    "d3:8e:18:06",
 ]
 
 READ_COOLDOWN_MS = 1500

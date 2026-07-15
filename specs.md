@@ -29,9 +29,13 @@ O projeto agora fica separado por modulo, cada um com sua propria pasta `src`:
 
 ## Arquivos Embarcados
 
-Para o ESP32 com NFC, abra `ESP_NFC/src/esp_comunicando.py` no Thonny, ajuste
-`SSID`, `PASSWORD`, `HOST` e `NFC_UUIDS`, e salve no dispositivo MicroPython
-como `main.py`.
+Para o ESP32 com NFC, copie `ESP_NFC/src/esp_config.example.py` para
+`ESP_NFC/src/esp_config.py` e ajuste `SSID`, `PASSWORD` e `HOST`. Esse arquivo
+contem configuracoes locais e e ignorado pelo Git. Ajuste `NFC_UUIDS` em
+`esp_comunicando.py` quando necessario.
+
+No Thonny, salve `esp_config.py` na raiz do dispositivo com o mesmo nome e
+salve `esp_comunicando.py` como `main.py`.
 
 Para testar apenas o leitor NFC com buzzer, copie estes arquivos de
 `ESP_NFC/src` para a raiz do filesystem MicroPython:
@@ -75,6 +79,7 @@ Feche ou desconecte o backend do Thonny antes de usar `mpremote`, pois a porta
 serial nao pode ser usada por dois programas ao mesmo tempo.
 
 ```powershell
+python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_config.py :esp_config.py
 python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_comunicando.py :main.py
 python -m mpremote connect COM3 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
 ```

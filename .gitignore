@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 whatsapp/
 *.pyc
+/ESP_NFC/src/esp_config.py
