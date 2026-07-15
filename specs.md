@@ -43,8 +43,14 @@ Para testar apenas o leitor NFC com buzzer, copie estes arquivos de
 - `start.py`
 - `nfc_buzzer.py`
 
-Para o ESP32 dos assentos, abra `ESP_Assentos/src/sensor_v1.py` no Thonny e
-salve no dispositivo MicroPython como `main.py`.
+Para o ESP32 dos assentos, copie `ESP_Assentos/src/esp_config.example.py` para
+`ESP_Assentos/src/esp_config.py` e ajuste a rede, o IP do servidor e `SEAT_ID`.
+Salve `esp_config.py` na raiz do dispositivo e salve `sensor_v1.py` como
+`main.py`. Cada ESP de assento deve usar um `SEAT_ID` diferente.
+
+O assento informa ao servidor quando o sensor esta inativo. Ao receber um NFC
+autorizado, o servidor seleciona o primeiro assento livre e manda acender o
+LED. O LED apaga quando o sensor detecta que alguem se sentou.
 
 ## Uso
 
@@ -81,7 +87,8 @@ serial nao pode ser usada por dois programas ao mesmo tempo.
 ```powershell
 python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_config.py :esp_config.py
 python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_comunicando.py :main.py
-python -m mpremote connect COM3 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
+python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\esp_config.py :esp_config.py
+python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
 ```
 
 ## Servidor No PC

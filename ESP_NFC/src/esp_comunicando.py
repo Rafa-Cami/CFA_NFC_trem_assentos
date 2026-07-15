@@ -414,8 +414,14 @@ def main():
             can_send = time.ticks_diff(now, last_sent_at) >= READ_COOLDOWN_MS
 
             if uid_text in allowed_uids and can_send:
-                send_nfc_message(connection, response_file, uid_text, allowed_uids)
-                success_beep()
+                response = send_nfc_message(
+                    connection, response_file, uid_text, allowed_uids
+                )
+                if response.get("status") == "ok":
+                    success_beep()
+                else:
+                    print("No available seat:", response)
+                    error_beep()
                 last_sent_at = now
             elif uid_text not in allowed_uids and can_send:
                 print("UID not authorized:", uid_text)
