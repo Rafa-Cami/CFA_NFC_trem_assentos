@@ -66,7 +66,7 @@ while True:
 
             print("Sent:", message)
 
-            # Wait for PC response
+            # Wait for PC responsez/
             response = file.readline()
 
             if not response:
