@@ -298,6 +298,14 @@ def error_beep():
     beep(170, 300)
 
 
+def invalid_card_beep():
+    beep(90, 750)
+    time.sleep_ms(55)
+    beep(110, 480)
+    time.sleep_ms(55)
+    beep(170, 280)
+
+
 def format_uid(uid):
     return ":".join("{:02x}".format(byte) for byte in uid)
 
@@ -425,7 +433,7 @@ def main():
                 last_sent_at = now
             elif uid_text not in allowed_uids and can_send:
                 print("UID not authorized:", uid_text)
-                error_beep()
+                invalid_card_beep()
                 last_sent_at = now
 
             time.sleep_ms(250)
