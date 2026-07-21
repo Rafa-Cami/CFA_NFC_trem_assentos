@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Prioriza é um protótipo de acessibilidade que conecta identificação NFC, assentos disponíveis e sinalização luminosa no transporte público."
+    />
+    <meta name="theme-color" content="#102421" />
+    <title>Prioriza — um sinal simples para quem precisa de um lugar</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script
+      src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"
+      defer
+    ></script>
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+    <header class="site-header" aria-label="Navegação principal">
+      <a class="brand" href="#inicio" aria-label="Prioriza, início">
+        <span class="brand-signal" aria-hidden="true"></span>
+        <span>Prioriza</span>
+      </a>
+      <nav class="main-nav" aria-label="Seções">
+        <a href="#desafio">O desafio</a>
+        <a href="#demonstracao">Como funciona</a>
+        <a href="#prototipo">Protótipo</a>
+      </nav>
+      <a class="header-cta" href="#piloto">
+        Projeto-piloto
+        <i data-lucide="arrow-down-right" aria-hidden="true"></i>
+      </a>
+    </header>
+
+    <main id="conteudo">
+      <section class="hero" id="inicio" aria-labelledby="hero-title">
+        <img
+          class="hero-image"
+          src="assets/hero-prioriza.png"
+          alt="Passageira aproxima um cartão de um leitor NFC dentro de um trem enquanto um assento prioritário disponível é sinalizado por uma luz."
+        />
+        <div class="hero-overlay" aria-hidden="true"></div>
+        <div class="hero-inner">
+          <div class="hero-copy">
+            <p class="eyebrow hero-eyebrow">Mobilidade que percebe. Sem expor.</p>
+            <h1 id="hero-title">Prioriza</h1>
+            <p class="hero-promise">Um sinal simples para quem precisa de um lugar.</p>
+            <p class="hero-summary">
+              NFC, sensores e luz conectados para transformar assentos prioritários
+              em uma rede de cuidado dentro do transporte público.
+            </p>
+            <div class="hero-actions" aria-label="Ações principais">
+              <a class="button button-primary" href="#piloto">
+                Propor projeto-piloto
+                <i data-lucide="arrow-right" aria-hidden="true"></i>
+              </a>
+              <a class="text-link hero-link" href="#demonstracao">
+                Ver como funciona
+                <i data-lucide="play" aria-hidden="true"></i>
+              </a>
+            </div>
+          </div>
+          <a class="scroll-cue" href="#desafio" aria-label="Ir para a próxima seção">
+            <span>Descobrir</span>
+            <i data-lucide="arrow-down" aria-hidden="true"></i>
+          </a>
+        </div>
+      </section>
+
+      <section class="challenge section" id="desafio" aria-labelledby="challenge-title">
+        <div class="section-inner challenge-grid">
+          <div class="reveal">
+            <p class="eyebrow">O desafio</p>
+            <h2 id="challenge-title">Nem toda necessidade é visível.</h2>
+          </div>
+          <div class="challenge-copy reveal">
+            <p class="lead">
+              Em um vagão cheio, pedir um assento pode significar explicar uma condição
+              pessoal em voz alta. O Prioriza cria outra possibilidade: a própria pessoa
+              aciona um sinal discreto e encontra onde há disponibilidade.
+            </p>
+            <div class="audiences" aria-label="Pessoas que podem se beneficiar">
+              <span>PCDs</span>
+              <span>Gestantes</span>
+              <span>Idosos</span>
+              <span>Mobilidade reduzida</span>
+              <span>Pessoas com crianças de colo</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo-section section" id="demonstracao" aria-labelledby="demo-title">
+        <div class="section-inner">
+          <div class="section-heading section-heading-light reveal">
+            <p class="eyebrow">Demonstração</p>
+            <h2 id="demo-title">Do cartão ao assento, em segundos.</h2>
+            <p>
+              A leitura NFC inicia uma busca local. O primeiro assento livre recebe um
+              sinal luminoso; ao detectar ocupação, a luz se apaga.
+            </p>
+          </div>
+
+          <div class="simulator reveal" aria-label="Simulador do sistema Prioriza">
+            <div class="simulator-topline">
+              <div class="reader-node" aria-hidden="true">
+                <i data-lucide="scan-line"></i>
+                <span>NFC</span>
+              </div>
+              <div class="signal-track" aria-hidden="true">
+                <span class="signal-pulse"></span>
+              </div>
+              <div class="server-node" aria-hidden="true">
+                <i data-lucide="server"></i>
+                <span>Servidor local</span>
+              </div>
+            </div>
+
+            <div class="seat-row" aria-label="Estados dos assentos">
+              <button class="seat" type="button" data-seat="1" aria-pressed="false">
+                <span class="seat-light" aria-hidden="true"></span>
+                <span class="seat-shape" aria-hidden="true">
+                  <span class="seat-back"></span>
+                  <span class="seat-base"></span>
+                </span>
+                <span class="seat-label">Assento 1</span>
+                <span class="seat-state">Livre</span>
+              </button>
+              <button class="seat" type="button" data-seat="2" aria-pressed="true">
+                <span class="seat-light" aria-hidden="true"></span>
+                <span class="seat-shape" aria-hidden="true">
+                  <span class="seat-back"></span>
+                  <span class="seat-base"></span>
+                </span>
+                <span class="seat-label">Assento 2</span>
+                <span class="seat-state">Ocupado</span>
+              </button>
+              <button class="seat" type="button" data-seat="3" aria-pressed="false">
+                <span class="seat-light" aria-hidden="true"></span>
+                <span class="seat-shape" aria-hidden="true">
+                  <span class="seat-back"></span>
+                  <span class="seat-base"></span>
+                </span>
+                <span class="seat-label">Assento 3</span>
+                <span class="seat-state">Livre</span>
+              </button>
+            </div>
+
+            <div class="simulator-controls">
+              <button class="button button-signal" id="scan-button" type="button">
+                <i data-lucide="scan-line" aria-hidden="true"></i>
+                Simular leitura NFC
+              </button>
+              <button
+                class="icon-button"
+                id="reset-button"
+                type="button"
+                title="Reiniciar simulação"
+                aria-label="Reiniciar simulação"
+              >
+                <i data-lucide="rotate-ccw" aria-hidden="true"></i>
+              </button>
+              <p class="simulator-status" id="simulator-status" aria-live="polite">
+                Sistema pronto. Dois assentos disponíveis.
+              </p>
+            </div>
+          </div>
+
+          <ol class="flow reveal" aria-label="Fluxo do Prioriza">
+            <li>
+              <span class="flow-number">01</span>
+              <i data-lucide="credit-card" aria-hidden="true"></i>
+              <div>
+                <h3>A pessoa sinaliza</h3>
+                <p>Um cartão ou chaveiro NFC inicia o pedido de forma intencional.</p>
+              </div>
+            </li>
+            <li>
+              <span class="flow-number">02</span>
+              <i data-lucide="radio-tower" aria-hidden="true"></i>
+              <div>
+                <h3>A rede localiza</h3>
+                <p>O servidor identifica quais assentos estão conectados e livres.</p>
+              </div>
+            </li>
+            <li>
+              <span class="flow-number">03</span>
+              <i data-lucide="lightbulb" aria-hidden="true"></i>
+              <div>
+                <h3>A luz orienta</h3>
+                <p>O assento disponível acende e apaga assim que é ocupado.</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="inspiration section" id="inspiracao" aria-labelledby="inspiration-title">
+        <div class="section-inner inspiration-grid">
+          <div class="inspiration-number reveal" aria-label="500 participantes">
+            <strong>500</strong>
+            <span>gestantes participaram de um teste de cinco dias em Busan</span>
+          </div>
+          <div class="inspiration-copy reveal">
+            <p class="eyebrow">A inspiração</p>
+            <h2 id="inspiration-title">Uma luz abriu uma conversa na Coreia do Sul.</h2>
+            <p>
+              Em 2016, o Pink Light usou beacons para acionar luzes próximas aos
+              assentos prioritários. O piloto mostrou o potencial da tecnologia e também
+              revelou uma pergunta importante: como ajudar sem transformar a pessoa em
+              centro das atenções?
+            </p>
+            <p>
+              O Prioriza parte dessa experiência e propõe um gesto voluntário por NFC,
+              com processamento local e foco na disponibilidade do assento, não na
+              condição do passageiro.
+            </p>
+            <a
+              class="text-link"
+              href="https://www.bbc.com/news/technology-36443920"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Ler a reportagem da BBC
+              <i data-lucide="external-link" aria-hidden="true"></i>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="prototype section" id="prototipo" aria-labelledby="prototype-title">
+        <div class="section-inner prototype-grid">
+          <div class="prototype-copy reveal">
+            <p class="eyebrow">CFA NFC · prova de conceito</p>
+            <h2 id="prototype-title">Já existe um sistema conversando.</h2>
+            <p class="lead">
+              O protótipo conecta hardware acessível e software aberto para validar o
+              fluxo completo dentro de uma rede local.
+            </p>
+            <dl class="prototype-specs">
+              <div>
+                <dt>Identificação</dt>
+                <dd>ESP32 + leitor PN532</dd>
+              </div>
+              <div>
+                <dt>Orquestração</dt>
+                <dd>Servidor TCP/IP local</dd>
+              </div>
+              <div>
+                <dt>Disponibilidade</dt>
+                <dd>Sensor por assento + LED</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="architecture reveal" aria-label="Arquitetura do protótipo">
+            <div class="architecture-node architecture-nfc">
+              <i data-lucide="scan-line" aria-hidden="true"></i>
+              <span>Leitor NFC</span>
+              <small>pedido autorizado</small>
+            </div>
+            <div class="architecture-link" aria-hidden="true">
+              <span></span>
+            </div>
+            <div class="architecture-node architecture-server">
+              <i data-lucide="waypoints" aria-hidden="true"></i>
+              <span>Servidor</span>
+              <small>decisão local</small>
+            </div>
+            <div class="architecture-link" aria-hidden="true">
+              <span></span>
+            </div>
+            <div class="architecture-node architecture-seat">
+              <i data-lucide="armchair" aria-hidden="true"></i>
+              <span>Assento</span>
+              <small>sensor + luz</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="pilot section" id="piloto" aria-labelledby="pilot-title">
+        <div class="section-inner pilot-inner reveal">
+          <p class="eyebrow">Próxima parada</p>
+          <h2 id="pilot-title">Vamos testar uma mobilidade mais atenta?</h2>
+          <p>
+            O Prioriza está pronto para sair da bancada e aprender com um ambiente real.
+            Um projeto-piloto pode adaptar o fluxo ao veículo, à operação e às pessoas que
+            usam o transporte todos os dias.
+          </p>
+          <div class="pilot-actions">
+            <a
+              class="button button-dark"
+              href="https://github.com/Rafa-Cami/CFA_NFC_trem_assentos/issues/new?title=Proposta%20de%20projeto-piloto%20Prioriza"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Propor projeto-piloto
+              <i data-lucide="message-square-plus" aria-hidden="true"></i>
+            </a>
+            <a
+              class="text-link pilot-link"
+              href="https://github.com/Rafa-Cami/CFA_NFC_trem_assentos"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Explorar o código
+              <i data-lucide="github" aria-hidden="true"></i>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="section-inner footer-inner">
+        <a class="brand brand-footer" href="#inicio">
+          <span class="brand-signal" aria-hidden="true"></span>
+          <span>Prioriza</span>
+        </a>
+        <p>Um protótipo de tecnologia cívica para mobilidade inclusiva.</p>
+        <p>CFA NFC · 2026</p>
+      </div>
+    </footer>
+  </body>
+</html>
