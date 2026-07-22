@@ -1,6 +1,12 @@
-# Projeto de Cartões de identificação para pessoas com direito a assentos preferenciais
+<p align="center">
+  <img src="../docs/priorizahlogo.png" width="300" /><br/>
+  <h1> Priorizah: Sistema de sensores para assentos preferenciais</h1> <br/>
+  <text>:manual_wheelchair: Relatório do projeto</text>
+</p>
 
-O projeto de cartões de identificação, desenvolvido na disciplina de CFA, tem como objetivo desenvolver um projeto utilizando a tecnologia de NFC para realizar avisos sonoros e alertar os passageiros do vagão. 
+<br/>
+
+O projeto de cartões de identificação, desenvolvido na disciplina de [CFA](https://github.com/FNakano/CFA), tem como objetivo desenvolver um projeto utilizando a tecnologia de NFC para realizar avisos sonoros e alertar os passageiros do vagão. Para ver outros projetos relacionados que utilizam NFC, utilizamos como inspiração o projeto [CardForRPG](https://github.com/Felipe256/CardForRPG) e o projeto [SMAC - Sistema de Monitoramento para Assentos de Cadeira de Roda](https://github.com/Anemaygi/SMAC/tree/master/projeto) que apresenta uma possibilidade de implementação para os sensores de toque detectarem presença em um assento.
 
 ## Aplicação Real
 
