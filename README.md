@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../docs/priorizahlogo.png" width="300" /><br/>
+  <img src="./docs/priorizahlogo.png" width="300" /><br/>
   <h1> Priorizah: Sistema de sensores para assentos preferenciais</h1> <br/>
   <text>:manual_wheelchair: Relatório do projeto</text>
 </p>
