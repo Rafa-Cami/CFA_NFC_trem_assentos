@@ -44,7 +44,7 @@ Para o segundo protótipo, integraremos mais um módulo de assentos, portanto ad
 # Como implementar/rodar:
 ## NFC Buzzer
 
-Projeto MicroPython para ESP32-C3 SuperMini com PN532 em I2C. Ao aproximar um
+Modulo do projeto que utiliza MicroPython para ESP32-C3 SuperMini com PN532 em I2C. Ao aproximar um
 cartao NFC do modulo PN532, o ESP32 imprime o UID no REPL e aciona um buzzer
 passivo conectado ao GPIO4.
 
