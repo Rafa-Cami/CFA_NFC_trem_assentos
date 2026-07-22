@@ -22,19 +22,19 @@ Assim, o dispositivo seria uma forma de alertar os passageiros quando devem cede
 
 ### usuário com direito ao assento preferencial
 
-- 1. ao entrar no trem o usuario deve ter em mãos o acessorio (cartão ou chaveiro) que tem informações sobre o assento preferencial
-- 2. o usuário deve encostar o acessório no dispositivo no sensor de nfc (requisito esse estar localizado com fácil acesso)
-- 3. o usuário verá a luz acima dos assentos liberados acender
-- 3.5 Se não houverem assentos livres, os passageiros ouviram o anuncio da chegada do passageiro preferencial e necessidade de liberação de assentos preferenciais
-- 4. o usuário pode ir até o assento, necessitando possivelmente que outros passageiros deem lugar sabendo da presença do passageiro preferencial
+ 1. ao entrar no trem o usuario deve ter em mãos o acessorio (cartão ou chaveiro) que tem informações sobre o assento preferencial
+ 2. o usuário deve encostar o acessório no dispositivo no sensor de nfc (requisito esse estar localizado com fácil acesso)
+ 3. o usuário verá a luz acima dos assentos liberados acender
+     3.5 Se não houverem assentos livres, os passageiros ouviram o anuncio da chegada do passageiro preferencial e necessidade de liberação de assentos preferenciais
+ 4. o usuário pode ir até o assento, necessitando possivelmente que outros passageiros deem lugar sabendo da presença do passageiro preferencial
 
 
 ### usuários sem acesso ao assento preferencial
 
-- 1. ao chegar no trem, se houver um assento vazio e nao houver pessoas preferenciais usuário pode se sentar no assento preferencial
-- 2. o usuário fica tranquilo e quando chega na proxima estação se houver um usuario que deseja usar o assento preferencial ele ouve um anúncio
-- 3. o usuario deve se levantar, permitindo que a luz de assento livre ligue
-- 4. o usuario com direito ao assento verá o assento livre e se sentará nele
+ 1. ao chegar no trem, se houver um assento vazio e nao houver pessoas preferenciais usuário pode se sentar no assento preferencial
+ 2. o usuário fica tranquilo e quando chega na proxima estação se houver um usuario que deseja usar o assento preferencial ele ouve um anúncio
+ 3. o usuario deve se levantar, permitindo que a luz de assento livre ligue
+ 4. o usuario com direito ao assento verá o assento livre e se sentará nele
 
 
 ### preocupação com funcionalidade
