@@ -8,23 +8,23 @@ A iniciativa foi inspirada no sistema de sensores utilizado no metrô da Coreia 
 
 Assim, o dispositivo seria uma forma de alertar os passageiros quando devem ceder seu lugar para outro passageiro, sem necessidade de perguntar e sem que seja necessário pedir. É uma tecnologia relativamente barata de ser implementada como política pública que incentiva o bem-estar de diferentes grupos sociais com direito ao assento preferencial, como por exemplo: Pessoas com deficiência, pessoas com crianças de colo, idosos, obesos, gestantes, pessoas com restrição de mobilidade e autistas.
 
-## História de usuário:
+## História de usuário (exemplificação de como funcionaria o projeto):
 
-### usuário com direito ao assento preterencial
+### usuário com direito ao assento preferencial
 
-- ao entrar no trem o usuario deve ter em mãos o acessorio (cartão ou chaveiro) que tem informações sobre o assento preferencial
-- o usuário deve encostar o acessório no dispositivo no sensor de nfc (requisito esse estar localizado com facil acesso)
-- o usuário ouvirá o anuncio de sua chegada e necessidade de liberação de assentos preferenciais
-- o usuário verá a luz acima dos assentos liberados acender
-- o usuário pode ir até o assento, necessitando possivelmente que outros passageiros deem lugar
+- 1. ao entrar no trem o usuario deve ter em mãos o acessorio (cartão ou chaveiro) que tem informações sobre o assento preferencial
+- 2. o usuário deve encostar o acessório no dispositivo no sensor de nfc (requisito esse estar localizado com fácil acesso)
+- 3. o usuário verá a luz acima dos assentos liberados acender
+- 3.5 Se não houverem assentos livres, os passageiros ouviram o anuncio da chegada do passageiro preferencial e necessidade de liberação de assentos preferenciais
+- 4. o usuário pode ir até o assento, necessitando possivelmente que outros passageiros deem lugar sabendo da presença do passageiro preferencial
 
 
 ### usuários sem acesso ao assento preferencial
 
-- ao chegar no trem, se houver um assento vazio e nao houver pessoas preferenciais usuário pode se sentar no assento preferencial
-- o usuário fica tranquilo e quando chega na proxima estação se houver um usuario que deseja usar o assento preferencial ele ouve um anúncio
-- o usuario deve se levantar, permitindo que a luz de assento livre ligue
-- o usuario com direito ao assento verá o assento livre e se sentará nele
+- 1. ao chegar no trem, se houver um assento vazio e nao houver pessoas preferenciais usuário pode se sentar no assento preferencial
+- 2. o usuário fica tranquilo e quando chega na proxima estação se houver um usuario que deseja usar o assento preferencial ele ouve um anúncio
+- 3. o usuario deve se levantar, permitindo que a luz de assento livre ligue
+- 4. o usuario com direito ao assento verá o assento livre e se sentará nele
 
 
 ### preocupação com funcionalidade
@@ -34,6 +34,24 @@ Assim, o dispositivo seria uma forma de alertar os passageiros quando devem cede
 - O projeto em suas primeiras versões tem impedimentos para seu funcionamento em horários de pico. Os motivos são 
 1. limitação no número de assentos
 2. Possível lotação pode impedir o usuário de chegar ate o sensor do cartão. A lotação tambem pode impedir o usuário de enxergar a luz que sinaliza o assento livre, bem como impedir o deslocamento do usuario até lá.
+
+## Como foi feito o projeto:
+
+### Componentes:
+O projeto utiliza:
+- ESP32-C3 mini
+- Jumpers
+- PN532
+- Buzzer
+- Módulo sensor de toque capacitivo TTP223B
+- LED
+- Protoboard
+- PC ou outro dispositivo para atuar como servidor
+
+**código em micropython e comunicação via TCP/IP com necessidade de os ESP32 e o Servidor se conectarem em mesma rede**
+
+### Código:
+Os códigos se encontram
 
 ## Futuras Implementações:
 
