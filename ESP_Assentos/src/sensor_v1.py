@@ -1,9 +1,11 @@
 import json
-import socket
 import time
 
 import network
+import uasyncio as asyncio
 from machine import Pin
+
+from seat_state import SeatState
 
 try:
     from esp_config import HOST, PASSWORD, SEAT_ID, SSID
@@ -14,11 +16,12 @@ except ImportError:
 
 
 PORT = 5000
-SENSOR_PIN = 10
+SENSOR_1_PIN = 10
+SENSOR_2_PIN = 7
 LED_PIN = 5
 AVAILABLE_SENSOR_VALUE = 0
-POLL_INTERVAL_MS = 50
-STATUS_HEARTBEAT_MS = 10000
+SENSOR_INTERVAL_MS = 500
+WINDOW_SIZE = 10
 RECONNECT_DELAY_SECONDS = 3
 WIFI_CONNECT_TIMEOUT_MS = 20000
 WIFI_RETRY_DELAY_MS = 2000
@@ -36,13 +39,25 @@ WIFI_STATUS_NAMES = {
 }
 
 
-sensor = Pin(SENSOR_PIN, Pin.IN)
+sensor_1 = Pin(SENSOR_1_PIN, Pin.IN)
+sensor_2 = Pin(SENSOR_2_PIN, Pin.IN)
 led = Pin(LED_PIN, Pin.OUT)
 led.off()
 
 
-def is_available():
-    return sensor.value() == AVAILABLE_SENSOR_VALUE
+def validate_config():
+    if not isinstance(SSID, str) or not SSID or SSID == "YOUR_WIFI_NAME":
+        raise RuntimeError("SSID is not configured in esp_config.py")
+    if (
+        not isinstance(PASSWORD, str)
+        or not PASSWORD
+        or PASSWORD == "YOUR_WIFI_PASSWORD"
+    ):
+        raise RuntimeError("PASSWORD is not configured in esp_config.py")
+    if not isinstance(HOST, str) or not HOST:
+        raise RuntimeError("HOST is not configured in esp_config.py")
+    if not isinstance(SEAT_ID, str) or not SEAT_ID:
+        raise RuntimeError("SEAT_ID is not configured in esp_config.py")
 
 
 def wifi_status_text(wifi):
@@ -50,200 +65,181 @@ def wifi_status_text(wifi):
     return "{} ({})".format(status, WIFI_STATUS_NAMES.get(status, "unknown"))
 
 
-def reset_wifi(wifi):
-    try:
-        wifi.disconnect()
-    except OSError:
-        pass
-
-    wifi.active(False)
-    time.sleep_ms(1000)
-    wifi.active(True)
-    time.sleep_ms(1000)
+def sync_led(state):
+    led.value(1 if state.led_on else 0)
 
 
-def find_target_network(wifi, ssid):
-    try:
-        networks = wifi.scan()
-    except OSError as error:
-        print("Wi-Fi scan failed:", error)
-        return None
+async def sensor_loop(state):
+    next_read_at = time.ticks_add(time.ticks_ms(), SENSOR_INTERVAL_MS)
 
-    matches = [network_data for network_data in networks if network_data[0] == ssid]
-    if not matches:
-        print("Configured Wi-Fi not found; visible networks:", len(networks))
-        return None
+    while True:
+        wait_ms = time.ticks_diff(next_read_at, time.ticks_ms())
+        if wait_ms > 0:
+            await asyncio.sleep_ms(wait_ms)
 
-    target = max(matches, key=lambda network_data: network_data[3])
-    print(
-        "Wi-Fi found: channel={}, signal={} dBm, security={}".format(
-            target[2], target[3], target[4]
-        )
-    )
-    return target
+        previous_led_state = state.led_on
+        sensor_1_occupied = sensor_1.value() != AVAILABLE_SENSOR_VALUE
+        sensor_2_occupied = sensor_2.value() != AVAILABLE_SENSOR_VALUE
+        state.add_reading(sensor_1_occupied, sensor_2_occupied)
+
+        if previous_led_state and not state.led_on:
+            print("Seat occupied; LED OFF")
+        sync_led(state)
+
+        next_read_at = time.ticks_add(next_read_at, SENSOR_INTERVAL_MS)
+        if time.ticks_diff(time.ticks_ms(), next_read_at) >= 0:
+            next_read_at = time.ticks_add(time.ticks_ms(), SENSOR_INTERVAL_MS)
 
 
-def connect_wifi():
-    ssid = SSID
-    password = PASSWORD
-    if not isinstance(ssid, str) or not ssid or ssid == "YOUR_WIFI_NAME":
-        raise RuntimeError("SSID is not configured in esp_config.py")
-    if (
-        not isinstance(password, str)
-        or not password
-        or password == "YOUR_WIFI_PASSWORD"
-    ):
-        raise RuntimeError("PASSWORD is not configured in esp_config.py")
-
-    wifi = network.WLAN(network.STA_IF)
-    ssid_bytes = ssid.encode()
+async def connect_wifi(wifi):
     attempt = 0
 
     while not wifi.isconnected():
         attempt += 1
         print("Wi-Fi attempt", attempt)
-        reset_wifi(wifi)
-        target = find_target_network(wifi, ssid_bytes)
-
-        if target is None:
-            time.sleep_ms(WIFI_RETRY_DELAY_MS)
-            continue
 
         try:
-            if attempt % 2 == 1:
-                print("Connecting with strongest access point...")
-                wifi.connect(ssid, password, bssid=target[1])
-            else:
-                print("Connecting by SSID...")
-                wifi.connect(ssid, password)
-        except (OSError, TypeError) as error:
+            wifi.active(True)
+            wifi.disconnect()
+        except OSError:
+            pass
+
+        await asyncio.sleep_ms(250)
+
+        try:
+            wifi.connect(SSID, PASSWORD)
+        except OSError as error:
             print("Wi-Fi connect call failed:", error)
-            time.sleep_ms(WIFI_RETRY_DELAY_MS)
+            await asyncio.sleep_ms(WIFI_RETRY_DELAY_MS)
             continue
 
         started_at = time.ticks_ms()
         while not wifi.isconnected() and time.ticks_diff(
             time.ticks_ms(), started_at
         ) < WIFI_CONNECT_TIMEOUT_MS:
-            time.sleep_ms(250)
+            await asyncio.sleep_ms(250)
 
         if not wifi.isconnected():
             print("Wi-Fi attempt failed:", wifi_status_text(wifi))
-            time.sleep_ms(WIFI_RETRY_DELAY_MS)
+            await asyncio.sleep_ms(WIFI_RETRY_DELAY_MS)
 
     print("Connected to Wi-Fi")
     print("Seat ESP IP:", wifi.ifconfig()[0])
-    return wifi
 
 
-def connect_server():
-    print("Connecting to server {}:{}...".format(HOST, PORT))
-    connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    connection.connect((HOST, PORT))
-    connection.settimeout(0.1)
-    print("Connected to server as", SEAT_ID)
-    return connection
+async def send_message(writer, message):
+    writer.write((json.dumps(message) + "\n").encode())
+    await writer.drain()
 
 
-def send_message(connection, message):
-    connection.send((json.dumps(message) + "\n").encode())
+def handle_server_message(state, message):
+    message_type = message.get("type")
+    request_id = message.get("request_id")
 
+    if message_type == "get_status" and request_id is not None:
+        return {
+            "type": "seat_status",
+            "request_id": request_id,
+            "status": state.status,
+        }
 
-def send_status(connection, available, led_on):
-    message = {
-        "type": "seat_status",
-        "seat_id": SEAT_ID,
-        "available": available,
-        "led": 1 if led_on else 0,
+    if message_type == "set_led" and request_id is not None:
+        accepted = state.set_led(message.get("value"))
+        sync_led(state)
+        print("LED ON" if state.led_on else "LED OFF")
+        return {
+            "type": "set_led_result",
+            "request_id": request_id,
+            "accepted": accepted,
+        }
+
+    print("Unknown or invalid command:", message)
+    return {
+        "type": "error",
+        "request_id": request_id,
+        "error": "invalid_command",
     }
-    send_message(connection, message)
-    print("Status sent:", message)
 
 
-def handle_command(connection, message, available, led_on):
-    if message.get("type") != "set_led":
-        print("Unknown command:", message)
-        return led_on
+async def close_writer(writer):
+    if writer is None:
+        return
 
-    requested = message.get("value") == 1
-    led_on = requested and available
-    led.value(1 if led_on else 0)
-    print("LED ON" if led_on else "LED OFF")
-    send_status(connection, available, led_on)
-    return led_on
+    try:
+        writer.close()
+        if hasattr(writer, "wait_closed"):
+            await writer.wait_closed()
+    except OSError:
+        pass
 
 
-def run_connection(connection, wifi):
-    available = is_available()
-    led_on = False
-    led.off()
-    receive_buffer = b""
-    last_status_at = time.ticks_ms()
-    send_status(connection, available, led_on)
+async def run_connection(state):
+    print("Connecting to server {}:{}...".format(HOST, PORT))
+    reader, writer = await asyncio.open_connection(HOST, PORT)
+    print("Connected to server as", SEAT_ID)
 
-    while True:
-        if not wifi.isconnected():
-            raise RuntimeError("Wi-Fi disconnected")
+    try:
+        await send_message(
+            writer,
+            {
+                "type": "seat_register",
+                "seat_id": SEAT_ID,
+            },
+        )
+        print("Seat registered as", SEAT_ID)
 
-        current_available = is_available()
-        if current_available != available:
-            available = current_available
-            if not available and led_on:
-                led_on = False
-                led.off()
-                print("Seat occupied; LED OFF")
-            send_status(connection, available, led_on)
-            last_status_at = time.ticks_ms()
-
-        now = time.ticks_ms()
-        if time.ticks_diff(now, last_status_at) >= STATUS_HEARTBEAT_MS:
-            send_status(connection, available, led_on)
-            last_status_at = now
-
-        try:
-            data = connection.recv(256)
-            if not data:
-                raise RuntimeError("Server disconnected")
-            receive_buffer += data
-        except OSError:
-            data = None
-
-        while b"\n" in receive_buffer:
-            line, receive_buffer = receive_buffer.split(b"\n", 1)
+        while True:
+            line = await reader.readline()
             if not line:
-                continue
+                raise RuntimeError("Server disconnected")
+
             try:
                 message = json.loads(line)
-                led_on = handle_command(connection, message, available, led_on)
-                last_status_at = time.ticks_ms()
             except ValueError as error:
                 print("Invalid server message:", error)
+                continue
 
-        time.sleep_ms(POLL_INTERVAL_MS)
+            response = handle_server_message(state, message)
+            await send_message(writer, response)
+    finally:
+        await close_writer(writer)
+
+
+async def communication_loop(state):
+    wifi = network.WLAN(network.STA_IF)
+
+    while True:
+        try:
+            if not wifi.isconnected():
+                await connect_wifi(wifi)
+            await run_connection(state)
+        except Exception as error:
+            print("Connection error:", error)
+            state.set_led(0)
+            sync_led(state)
+            await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+
+
+async def main_async():
+    validate_config()
+    state = SeatState(WINDOW_SIZE)
+
+    print("Starting seat controller", SEAT_ID)
+    print(
+        "Sensors GPIO{} and GPIO{}, LED GPIO{}".format(
+            SENSOR_1_PIN, SENSOR_2_PIN, LED_PIN
+        )
+    )
+
+    asyncio.create_task(sensor_loop(state))
+    await communication_loop(state)
 
 
 def main():
-    print("Starting seat controller", SEAT_ID)
-    print("Sensor GPIO{}, LED GPIO{}".format(SENSOR_PIN, LED_PIN))
-    wifi = connect_wifi()
-
-    while True:
-        connection = None
-        try:
-            if not wifi.isconnected():
-                wifi = connect_wifi()
-            connection = connect_server()
-            run_connection(connection, wifi)
-        except Exception as error:
-            print("Connection error:", error)
-            led.off()
-        finally:
-            if connection is not None:
-                try:
-                    connection.close()
-                except OSError:
-                    pass
-        time.sleep(RECONNECT_DELAY_SECONDS)
+    try:
+        asyncio.run(main_async())
+    finally:
+        asyncio.new_event_loop()
 
 
 if __name__ == "__main__":

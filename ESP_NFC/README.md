@@ -1,4 +1,4 @@
-# NFC Buzzer
+# NFC, sensores de assento e buzzer
 
 Módulo do Projeto em MicroPython para ESP32-C3 SuperMini com PN532 em I2C com função de: ao aproximar um
 cartao NFC do modulo PN532, o ESP32 imprime o UID no REPL e aciona um buzzer
@@ -19,6 +19,21 @@ Ligacoes usadas pela montagem atual:
 
 O PN532 deve estar configurado para I2C e responder no endereco `0x24`.
 
+Ligacoes usadas no ESP32-C3 dos assentos:
+
+| Componente | ESP32-C3 | Estado ocupado |
+| --- | --- | --- |
+| Sensor capacitivo 1 | GPIO10 | nivel alto (`1`) |
+| Sensor capacitivo 2 | GPIO7 | nivel alto (`1`) |
+| LED do assento | GPIO5 | - |
+
+Os dois sensores formam um unico estado agregado. Eles sao lidos a cada 500 ms
+e cada sensor possui uma janela circular com suas 10 leituras mais recentes.
+Se qualquer leitura nas duas janelas estiver ocupada, o assento inteiro sera
+considerado ocupado. O estado somente passa para disponivel depois de 10 pares
+consecutivos de leituras disponiveis. Durante os primeiros 5 segundos depois da
+inicializacao, o estado tambem permanece ocupado.
+
 ## Estrutura Do Codigo
 
 O projeto agora fica separado por modulo, cada um com sua propria pasta `src`:
@@ -26,6 +41,28 @@ O projeto agora fica separado por modulo, cada um com sua propria pasta `src`:
 - `servidor/src/`: codigo do PC/servidor TCP.
 - `ESP_NFC/src/`: codigo do ESP32 com leitor NFC PN532.
 - `ESP_Assentos/src/`: codigo do ESP32 que controla sensor/LED do assento.
+
+O ESP dos assentos continua sendo cliente TCP: ele abre e mantem uma conexao
+com o servidor do PC. Ao conectar, envia apenas um registro com seu `SEAT_ID`.
+Nao ha heartbeat nem envio espontaneo de status. Quando o servidor recebe um
+NFC, consulta o ultimo estado agregado pela conexao existente e, se o assento
+estiver disponivel, solicita o acionamento do LED.
+
+## Protocolo Do Assento
+
+As mensagens continuam sendo JSON delimitado por quebra de linha:
+
+```text
+ESP -> PC: {"type":"seat_register","seat_id":"seat_1"}
+PC  -> ESP: {"type":"get_status","request_id":17}
+ESP -> PC: {"type":"seat_status","request_id":17,"status":"disponível"}
+PC  -> ESP: {"type":"set_led","request_id":18,"value":1}
+ESP -> PC: {"type":"set_led_result","request_id":18,"accepted":true}
+```
+
+O `request_id` permite ao servidor associar cada resposta a consulta correta.
+O ESP recusa `set_led` quando o assento esta ocupado ou quando o LED ja esta
+aceso.
 
 ## Arquivos Embarcados
 
@@ -45,12 +82,14 @@ Para testar apenas o leitor NFC com buzzer, copie estes arquivos de
 
 Para o ESP32 dos assentos, copie `ESP_Assentos/src/esp_config.example.py` para
 `ESP_Assentos/src/esp_config.py` e ajuste a rede, o IP do servidor e `SEAT_ID`.
-Salve `esp_config.py` na raiz do dispositivo e salve `sensor_v1.py` como
-`main.py`. Cada ESP de assento deve usar um `SEAT_ID` diferente.
+Salve `esp_config.py` e `seat_state.py` na raiz do dispositivo e salve
+`sensor_v1.py` como `main.py`. Cada ESP de assento deve usar um `SEAT_ID`
+diferente.
 
-O assento informa ao servidor quando o sensor esta inativo. Ao receber um NFC
-autorizado, o servidor seleciona o primeiro assento livre e manda acender o
-LED. O LED apaga quando o sensor detecta que alguem se sentou.
+Ao receber um NFC autorizado, o servidor consulta os assentos registrados em
+ordem de `SEAT_ID`. O primeiro ESP que responder disponivel e aceitar o comando
+tera o LED aceso. O LED apaga localmente assim que a janela agregada detectar
+ocupacao.
 
 ## Uso
 
@@ -88,6 +127,7 @@ serial nao pode ser usada por dois programas ao mesmo tempo.
 python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_config.py :esp_config.py
 python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_comunicando.py :main.py
 python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\esp_config.py :esp_config.py
+python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\seat_state.py :seat_state.py
 python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
 ```
 
