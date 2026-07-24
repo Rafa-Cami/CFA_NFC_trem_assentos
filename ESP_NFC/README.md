@@ -1,8 +1,8 @@
 # NFC, sensores de assento e buzzer
 
-Projeto MicroPython para ESP32-C3 SuperMini com PN532 em I2C. Ao aproximar um
+Módulo do Projeto em MicroPython para ESP32-C3 SuperMini com PN532 em I2C com função de: ao aproximar um
 cartao NFC do modulo PN532, o ESP32 imprime o UID no REPL e aciona um buzzer
-passivo conectado ao GPIO4.
+passivo conectado ao GPIO4. 
 
 ## Hardware
 
