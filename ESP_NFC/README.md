@@ -25,6 +25,7 @@ Ligacoes usadas no ESP32-C3 dos assentos:
 | --- | --- | --- |
 | Sensor capacitivo 1 | GPIO10 | nivel alto (`1`) |
 | Sensor capacitivo 2 | GPIO7 | nivel alto (`1`) |
+| Resistor para LED| - | - |
 | LED do assento | GPIO5 | - |
 
 Os dois sensores formam um unico estado agregado. Eles sao lidos a cada 500 ms
