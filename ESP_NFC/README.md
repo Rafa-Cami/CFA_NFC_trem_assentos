@@ -12,7 +12,7 @@ Ligacoes usadas pela montagem atual:
 | --- | --- | --- |
 | PN532 | SDA | GPIO8 |
 | PN532 | SCL | GPIO9 |
-| PN532 | VCC | 3V3 |
+| PN532 | VCC | 5v |
 | PN532 | GND | GND |
 | Buzzer passivo | + | GPIO4 |
 | Buzzer passivo | - | GND |
