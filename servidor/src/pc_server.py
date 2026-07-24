@@ -5,63 +5,162 @@ import threading
 
 HOST = "0.0.0.0"
 PORT = 5000
+SEAT_REQUEST_TIMEOUT_SECONDS = 1.0
+STATUS_OCCUPIED = "ocupado"
+STATUS_AVAILABLE = "disponível"
 
 seats = {}
 seats_lock = threading.Lock()
+request_id_lock = threading.Lock()
+next_request_id = 1
+
+
+class SeatRequestError(Exception):
+    pass
+
+
+class SeatRequestTimeout(SeatRequestError):
+    pass
+
+
+class PendingResponse:
+    def __init__(self, expected_type):
+        self.expected_type = expected_type
+        self.event = threading.Event()
+        self.response = None
+        self.error = None
+
+
+def allocate_request_id():
+    global next_request_id
+
+    with request_id_lock:
+        request_id = next_request_id
+        next_request_id += 1
+    return request_id
 
 
 class ClientConnection:
     def __init__(self, connection, address):
         self.connection = connection
         self.address = address
+        self.seat_id = None
         self.send_lock = threading.Lock()
+        self.transaction_lock = threading.Lock()
+        self.pending_lock = threading.Lock()
+        self.pending = {}
+        self.closed = False
 
     def send(self, message):
-        payload = (json.dumps(message) + "\n").encode()
+        payload = (json.dumps(message, ensure_ascii=False) + "\n").encode()
         with self.send_lock:
+            if self.closed:
+                raise OSError("connection is closed")
             self.connection.sendall(payload)
 
+    def request(self, message_type, expected_type, **fields):
+        request_id = allocate_request_id()
+        pending = PendingResponse(expected_type)
+        message = {
+            "type": message_type,
+            "request_id": request_id,
+        }
+        message.update(fields)
+
+        with self.pending_lock:
+            if self.closed:
+                raise SeatRequestError("seat connection is closed")
+            self.pending[request_id] = pending
+
+        try:
+            self.send(message)
+        except OSError as error:
+            with self.pending_lock:
+                self.pending.pop(request_id, None)
+            raise SeatRequestError(str(error)) from error
+
+        if not pending.event.wait(SEAT_REQUEST_TIMEOUT_SECONDS):
+            with self.pending_lock:
+                self.pending.pop(request_id, None)
+            raise SeatRequestTimeout(
+                f"timeout waiting for {expected_type} from {self.address}"
+            )
+
+        if pending.error is not None:
+            raise SeatRequestError(str(pending.error))
+        return pending.response
+
+    def deliver_response(self, message):
+        request_id = message.get("request_id")
+        if request_id is None:
+            print(f"Resposta sem request_id de {self.address}: {message}")
+            return False
+
+        with self.pending_lock:
+            pending = self.pending.pop(request_id, None)
+
+        if pending is None:
+            print(
+                f"Resposta inesperada ou atrasada de {self.address}: {message}"
+            )
+            return False
+
+        if message.get("type") != pending.expected_type:
+            pending.error = SeatRequestError(
+                "expected {}, received {}".format(
+                    pending.expected_type, message.get("type")
+                )
+            )
+        else:
+            pending.response = message
+        pending.event.set()
+        return True
+
+    def fail_pending(self, error):
+        with self.pending_lock:
+            pending_responses = list(self.pending.values())
+            self.pending.clear()
+
+        for pending in pending_responses:
+            pending.error = error
+            pending.event.set()
+
     def close(self):
+        with self.pending_lock:
+            if self.closed:
+                return
+            self.closed = True
+
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         try:
             self.connection.close()
         except OSError:
             pass
 
+        self.fail_pending(SeatRequestError("seat connection closed"))
 
-def update_seat_status(client, message):
+
+def register_seat(client, message):
     seat_id = message.get("seat_id")
     if not isinstance(seat_id, str) or not seat_id:
-        raise ValueError("seat_status sem seat_id valido")
+        raise ValueError("seat_register sem seat_id valido")
 
-    available = message.get("available") is True
-    led_on = message.get("led") == 1
     old_client = None
+    client.seat_id = seat_id
 
     with seats_lock:
         previous = seats.get(seat_id)
-        if previous is not None and previous["client"] is not client:
-            old_client = previous["client"]
-
-        reserved = led_on
-        if previous is not None and previous["client"] is client:
-            reserved = previous["reserved"] or led_on
-            if not available:
-                reserved = False
-            elif not previous["available"] and available and not led_on:
-                reserved = False
-
-        seats[seat_id] = {
-            "client": client,
-            "available": available,
-            "led": led_on,
-            "reserved": reserved,
-        }
+        if previous is not None and previous is not client:
+            old_client = previous
+        seats[seat_id] = client
 
     if old_client is not None:
         old_client.close()
 
-    state = "livre" if available else "ocupado"
-    print(f"Assento {seat_id}: {state}, LED={int(led_on)}")
+    print(f"Assento registrado: {seat_id} ({client.address})")
     return seat_id
 
 
@@ -71,36 +170,50 @@ def remove_seat(seat_id, client):
 
     with seats_lock:
         current = seats.get(seat_id)
-        if current is not None and current["client"] is client:
+        if current is client:
             del seats[seat_id]
             print(f"Assento desconectado: {seat_id}")
 
 
+def get_registered_seats():
+    with seats_lock:
+        return [(seat_id, seats[seat_id]) for seat_id in sorted(seats)]
+
+
 def activate_available_seat():
-    while True:
-        with seats_lock:
-            candidates = sorted(
-                seat_id
-                for seat_id, state in seats.items()
-                if state["available"] and not state["reserved"]
-            )
-
-            if not candidates:
-                return None
-
-            seat_id = candidates[0]
-            state = seats[seat_id]
-            state["reserved"] = True
-            client = state["client"]
-
+    for seat_id, client in get_registered_seats():
         try:
-            client.send({"type": "set_led", "seat_id": seat_id, "value": 1})
-            print(f"LED solicitado para o assento {seat_id}")
-            return seat_id
-        except OSError as error:
-            print(f"Falha ao comandar {seat_id}: {error}")
+            with client.transaction_lock:
+                status_response = client.request(
+                    "get_status",
+                    "seat_status",
+                )
+                status = status_response.get("status")
+
+                if status == STATUS_OCCUPIED:
+                    print(f"Assento {seat_id}: ocupado")
+                    continue
+                if status != STATUS_AVAILABLE:
+                    raise SeatRequestError(
+                        f"status invalido de {seat_id}: {status!r}"
+                    )
+
+                led_response = client.request(
+                    "set_led",
+                    "set_led_result",
+                    value=1,
+                )
+                if led_response.get("accepted") is True:
+                    print(f"LED ativado no assento {seat_id}")
+                    return seat_id
+
+                print(f"Assento {seat_id} recusou a ativacao do LED")
+        except (OSError, SeatRequestError) as error:
+            print(f"Falha ao consultar {seat_id}: {error}")
             remove_seat(seat_id, client)
             client.close()
+
+    return None
 
 
 def handle_nfc_message(message):
@@ -130,26 +243,39 @@ def handle_nfc_message(message):
     }
 
 
+def read_json_line(response_file, address):
+    line = response_file.readline()
+    if not line:
+        return None
+
+    try:
+        return json.loads(line)
+    except ValueError as error:
+        raise ValueError(f"JSON invalido de {address}: {error}") from error
+
+
 def handle_client(connection, address):
     client = ClientConnection(connection, address)
-    response_file = connection.makefile("r")
+    response_file = connection.makefile("r", encoding="utf-8")
+    role = None
     seat_id = None
     print(f"Dispositivo conectado: {address}")
 
     try:
         while True:
-            line = response_file.readline()
-            if not line:
+            message = read_json_line(response_file, address)
+            if message is None:
                 break
 
-            try:
-                message = json.loads(line)
-            except (ValueError, json.JSONDecodeError) as error:
-                print(f"JSON invalido de {address}: {error}")
-                continue
+            if role is None:
+                if message.get("type") == "seat_register":
+                    role = "seat"
+                    seat_id = register_seat(client, message)
+                    continue
+                role = "nfc"
 
-            if message.get("type") == "seat_status":
-                seat_id = update_seat_status(client, message)
+            if role == "seat":
+                client.deliver_response(message)
                 continue
 
             response = handle_nfc_message(message)

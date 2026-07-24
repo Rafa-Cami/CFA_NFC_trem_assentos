@@ -29,6 +29,23 @@ Para estruturar fisicamente o projeto, serão realizados 3 protótipos, dividos 
 | 1          | Protoboard      |
 | N          | Jumpers         |
 
+Ligacoes do modulo de assentos:
+
+| Funcao | GPIO |
+| --- | --- |
+| Sensor capacitivo 1 | GPIO10 |
+| Sensor capacitivo 2 | GPIO7 |
+| LED | GPIO5 |
+
+O firmware le os dois sensores a cada 500 ms e mantem as 10 leituras mais
+recentes de cada um. Uma unica leitura ocupada em qualquer sensor mantem o
+estado agregado ocupado ate que ela saia da janela de 5 segundos.
+
+O ESP dos assentos abre uma conexao TCP persistente com o PC e envia apenas um
+registro ao conectar. Os estados nao sao publicados periodicamente: depois de
+um evento NFC, o servidor consulta o estado agregado pela conexao ja aberta e
+solicita o LED somente se o ESP responder disponivel.
+
 ### Componentes Estruturais adicionais do segundo protótipo
 
 Para o segundo protótipo, integraremos mais um módulo de assentos, portanto adicionaremos:
