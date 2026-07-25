@@ -49,9 +49,9 @@ Assim, o dispositivo seria uma forma de alertar os passageiros quando devem cede
 
 ### 🔧 Componentes:
 O projeto utiliza:
-- 1 ESP32-C3 mini
+- 3 ESP32-C3 mini
 - 1 PN532
-- 2 Buzzer
+- 1 Buzzer
 - 4 Módulo sensor de toque capacitivo TTP223B
 - 2 LED
 - 2 Protoboard
