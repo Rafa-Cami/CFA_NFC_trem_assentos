@@ -38,7 +38,7 @@ TTL de cinco segundos. O ESP apenas mede e aplica concessões temporárias de LE
 
 Os arquivos `ESP_NFC/src/esp_config.py` e
 `ESP_Assentos/src/esp_config.py` contêm `SSID`, `PASSWORD` e `HOST`. O hotspot
-atual é `M27`, e o servidor está em `192.168.43.202`.
+atual é `Wesley`, e o servidor está em `172.20.10.2`.
 
 Cada ESP de assento precisa de configuração própria:
 

@@ -53,4 +53,4 @@ ESPs devem ser atualizados de forma coordenada.
 ## Rede
 
 O `HOST` dos ESPs deve conter o IPv4 do servidor na mesma rede. Na implantação
-atual, o hotspot é `M27` e o servidor é `192.168.43.202`.
+atual, o hotspot é `Wesley` e o servidor é `172.20.10.2`.

@@ -74,7 +74,7 @@ O protocolo antigo não é compatível. Atualize servidor e placas juntos.
 
 ## Configuração e execução
 
-O hotspot atual usa o SSID `M27`, e o servidor está em `192.168.43.202`. Esses
+O hotspot atual usa o SSID `Wesley`, e o servidor está em `172.20.10.2`. Esses
 valores devem estar nos arquivos `esp_config.py`. COM4 usa
 `SEAT_ID = "Alberto"` e COM5 usa `SEAT_ID = "Bete"`.
 
