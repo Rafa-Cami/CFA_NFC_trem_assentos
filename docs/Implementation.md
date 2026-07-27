@@ -24,7 +24,7 @@ Para estruturar fisicamente o projeto, serão realizados 3 protótipos, dividos 
 | Quantidade | Componente      |
 | ---------- | --------------- |
 | 1          | OLED ESP32 C3   |
-| 2          | LED             |
+| 1          | LED             |
 | 2          | Módulo sensor de toque capacitivo TTP223B |
 | 1          | Protoboard      |
 | N (valor variável)| Jumpers         |
@@ -36,7 +36,7 @@ Para o segundo protótipo, integraremos mais um módulo de assentos, portanto ad
 | Quantidade | Componente      |
 | ---------- | --------------- |
 | 1          | OLED ESP32 C3   |
-| 2          | LED             |
+| 1          | LED             |
 | 2          | Módulo sensor de toque capacitivo TTP223B |
 | 1          | Protoboard      |
 |  N (valor variável) | Jumpers         |
