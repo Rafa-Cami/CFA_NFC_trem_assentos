@@ -1,144 +1,105 @@
-# Como reproduzir o projeto
+# Implementação do sistema NFC e assentos
 
-## Componentes Estruturais
+## Componentes
 
-Para estruturar fisicamente o projeto, serão realizados 3 protótipos, dividos em 3 partes (módulo de leitura do Cartão NFC, o PC intermediário que servirá como Hotspot e o módulo dos assentos)
+O protótipo integrado possui:
 
-### Componentes Estruturais do primeiro protótipo
+- um ESP32-C3 com leitor PN532 e buzzer;
+- dois ESP32-C3 de assento, chamados Alberto e Bete;
+- dois sensores capacitivos e um LED por assento;
+- um PC executando o servidor TCP.
 
-#### Módulo de leitura NFC: 
+Todos os dispositivos precisam estar na mesma rede.
 
-| Quantidade | Componente    |
-| ---------- | ------------- |
-| 1          | OLED ESP32 C3 |
-| 1          | Leitor NFC  PN532 |
-| 1          | Buzzer        |
-| 1          | Protoboard    |
-| N (valor variável) | Jumpers       |
+## Ligações
 
-#### PC Intermediário Hotspot
-- Um PC configurado como hotspot de conexão entre o módulo de leitura NFC e o módulo dos assentos
+### NFC
 
-#### Módulo dos assentos:
+| Componente | Pino |
+| --- | --- |
+| PN532 SDA | GPIO8 |
+| PN532 SCL | GPIO9 |
+| PN532 VCC | 3V3 |
+| PN532 GND | GND |
+| Buzzer | GPIO4 |
 
-| Quantidade | Componente      |
-| ---------- | --------------- |
-| 1          | OLED ESP32 C3   |
-| 2          | LED             |
-| 2          | Módulo sensor de toque capacitivo TTP223B |
-| 1          | Protoboard      |
-| N (valor variável)| Jumpers         |
+O PN532 deve estar no modo I2C e responder em `0x24`.
 
-### Componentes Estruturais adicionais do segundo protótipo
+### Assentos
 
-Para o segundo protótipo, integraremos mais um módulo de assentos, portanto adicionaremos:
-
-| Quantidade | Componente      |
-| ---------- | --------------- |
-| 1          | OLED ESP32 C3   |
-| 2          | LED             |
-| 2          | Módulo sensor de toque capacitivo TTP223B |
-| 1          | Protoboard      |
-|  N (valor variável) | Jumpers         |
-
-# Como implementar/rodar:
-## NFC Buzzer
-
-Modulo do projeto que utiliza MicroPython para ESP32-C3 SuperMini com PN532 em I2C. Ao aproximar um
-cartao NFC do modulo PN532, o ESP32 imprime o UID no REPL e aciona um buzzer
-passivo conectado ao GPIO4.
-
-### Hardware
-
-Ligacoes usadas pela montagem atual:
-
-| Componente | Pino | ESP32-C3 |
+| Componente | Pino | Ocupado |
 | --- | --- | --- |
-| PN532 | SDA | GPIO8 |
-| PN532 | SCL | GPIO9 |
-| PN532 | VCC | 3V3 |
-| PN532 | GND | GND |
-| Buzzer passivo | + | GPIO4 |
-| Buzzer passivo | - | GND |
+| Sensor 1 | GPIO10 | nível alto |
+| Sensor 2 | GPIO7 | nível alto |
+| LED | GPIO5 | — |
 
-O PN532 deve estar configurado para I2C e responder no endereco `0x24`.
+## Regras
 
-### Estrutura Do Codigo
+- Alberto e Bete são assentos independentes.
+- Cada ESP lê os dois sensores imediatamente no boot e depois a cada 500 ms.
+- O estado físico é `OCUPADO` se qualquer sensor estiver alto; caso contrário,
+  é `DISPONIVEL`.
+- O servidor mantém o TTL: cada observação ocupada redefine o vencimento para
+  cinco segundos após aquela leitura.
+- Um assento sem amostra por 1,5 segundo fica indisponível.
+- Um cartão autorizado ativa todos os assentos online e disponíveis por cinco
+  segundos.
+- Uma nova aproximação válida recalcula os assentos e reinicia os cinco
+  segundos.
 
-O projeto agora fica separado por modulo, cada um com sua propria pasta `src`:
+## Confiabilidade NFC
 
-- `servidor/src/`: codigo do PC/servidor TCP.
-- `ESP_NFC/src/`: codigo do ESP32 com leitor NFC PN532.
-- `ESP_Assentos/src/`: codigo do ESP32 que controla sensor/LED do assento.
+O firmware de produção é `ESP_NFC/src/esp_comunicando.py`, gravado como
+`main.py`. O polling PN532, a rede e o buzzer são tarefas cooperativas
+independentes. Assim, conexão lenta ou Wi-Fi indisponível não interrompem a
+consulta ao leitor.
 
-### Arquivos Embarcados
+Eventos ficam em uma FIFO de oito posições por no máximo 30 segundos. Cada
+aproximação recebe um `event_id`; retransmissões usam o mesmo identificador para
+que o servidor não repita a ativação.
 
-Para o ESP32 com NFC, copie `ESP_NFC/src/esp_config.example.py` para
-`ESP_NFC/src/esp_config.py` e ajuste `SSID`, `PASSWORD` e `HOST`. Esse arquivo
-contem configuracoes locais e e ignorado pelo Git. Ajuste `NFC_UUIDS` em
-`esp_comunicando.py` quando necessario.
+## Rede e protocolo
 
-No Thonny, salve `esp_config.py` na raiz do dispositivo com o mesmo nome e
-salve `esp_comunicando.py` como `main.py`.
+O servidor escuta TCP em `0.0.0.0:5000`. As mensagens são objetos JSON UTF-8
+terminados por newline, com versão `v:1` e tamanho máximo de 512 bytes.
 
-Para testar apenas o leitor NFC com buzzer, copie estes arquivos de
-`ESP_NFC/src` para a raiz do filesystem MicroPython:
+Todos os clientes enviam `register` e aguardam `register_ack`. Depois:
 
-- `start.py`
-- `nfc_buzzer.py`
+- assentos enviam `seat_sample`;
+- NFC envia `nfc_presented`;
+- servidor envia `set_active`;
+- respostas usam `command_id` ou `event_id`.
 
-Para o ESP32 dos assentos, copie `ESP_Assentos/src/esp_config.example.py` para
-`ESP_Assentos/src/esp_config.py` e ajuste a rede, o IP do servidor e `SEAT_ID`.
-Salve `esp_config.py` na raiz do dispositivo e salve `sensor_v1.py` como
-`main.py`. Cada ESP de assento deve usar um `SEAT_ID` diferente.
+O protocolo antigo não é compatível. Atualize servidor e placas juntos.
 
-O assento informa ao servidor quando o sensor esta inativo. Ao receber um NFC
-autorizado, o servidor seleciona o primeiro assento livre e manda acender o
-LED. O LED apaga quando o sensor detecta que alguem se sentou.
+## Configuração e execução
 
-### Uso
+O hotspot atual usa o SSID `M27`, e o servidor está em `192.168.43.202`. Esses
+valores devem estar nos arquivos `esp_config.py`. COM4 usa
+`SEAT_ID = "Alberto"` e COM5 usa `SEAT_ID = "Bete"`.
 
-No Thonny, conecte ao ESP32 e execute no REPL:
-
-```python
-import start
-```
-
-Saida esperada na inicializacao:
-
-```text
-Starting NFC buzzer test
-I2C: SDA=GPIO8, SCL=GPIO9
-Buzzer: GPIO4
-I2C devices: ['0x24']
-Found PN532 firmware version: 1.6
-Waiting for NFC card...
-```
-
-Ao aproximar um cartao:
-
-```text
-Found card UID: d3:8e:18:06
-```
-
-Para parar o loop no Thonny, use `Ctrl+C` ou `Ctrl+F2`.
-
-### Upload Com mpremote
-
-Feche ou desconecte o backend do Thonny antes de usar `mpremote`, pois a porta
-serial nao pode ser usada por dois programas ao mesmo tempo.
-
-```powershell
-python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_config.py :esp_config.py
-python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_comunicando.py :main.py
-python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\esp_config.py :esp_config.py
-python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
-```
-
-## Servidor No PC
-
-Antes de ligar o ESP32 NFC, rode o servidor:
+Inicie o servidor:
 
 ```powershell
 python servidor\src\pc_server.py
 ```
+
+Mantenha o Thonny desconectado durante a operação, pois seu backend interrompe
+o `main.py`.
+
+## Arquivos embarcados
+
+### COM3 — NFC
+
+- `esp_config.py`;
+- `nfc_state.py`;
+- `esp_comunicando.py` como `main.py`.
+
+### COM4 e COM5 — assentos
+
+- `esp_config.py` individual;
+- `seat_state.py`;
+- `sensor_v1.py` como `main.py`.
+
+Antes do upload, faça backup dos arquivos atuais. Depois compare SHA-256,
+reinicie as placas e confirme os registros no log do servidor.

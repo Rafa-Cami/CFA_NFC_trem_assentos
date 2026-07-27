@@ -1,62 +1,73 @@
-STATUS_OCCUPIED = "ocupado"
-STATUS_AVAILABLE = "disponível"
+STATUS_OCCUPIED = "OCUPADO"
+STATUS_AVAILABLE = "DISPONIVEL"
 
 
 class SeatState:
-    def __init__(self, window_size=10):
-        if window_size <= 0:
-            raise ValueError("window_size must be positive")
+    """Physical sensor state and an idempotent LED lease.
 
-        self.window_size = window_size
-        self.sensor_1_window = [False] * window_size
-        self.sensor_2_window = [False] * window_size
-        self.next_index = 0
-        self.sample_count = 0
-        self.occupied_readings = 0
+    Occupancy TTL is intentionally not handled here. It belongs to the server.
+    """
+
+    def __init__(self, ticks_diff=None, ticks_add=None):
+        self.ticks_diff = ticks_diff or self._default_ticks_diff
+        self.ticks_add = ticks_add or self._default_ticks_add
+        self.status = STATUS_AVAILABLE
+        self.last_occupied_at = None
         self.led_on = False
+        self.led_expires_at = None
+        self.last_command_id = None
 
-    @property
-    def status(self):
-        if self.sample_count < self.window_size or self.occupied_readings > 0:
-            return STATUS_OCCUPIED
-        return STATUS_AVAILABLE
+    @staticmethod
+    def _default_ticks_diff(now_ms, previous_ms):
+        return now_ms - previous_ms
 
-    @property
-    def is_available(self):
-        return self.status == STATUS_AVAILABLE
+    @staticmethod
+    def _default_ticks_add(now_ms, delta_ms):
+        return now_ms + delta_ms
 
-    def add_reading(self, sensor_1_occupied, sensor_2_occupied):
-        sensor_1_occupied = bool(sensor_1_occupied)
-        sensor_2_occupied = bool(sensor_2_occupied)
-
-        if self.sample_count == self.window_size:
-            self.occupied_readings -= int(
-                self.sensor_1_window[self.next_index]
-            )
-            self.occupied_readings -= int(
-                self.sensor_2_window[self.next_index]
-            )
-        else:
-            self.sample_count += 1
-
-        self.sensor_1_window[self.next_index] = sensor_1_occupied
-        self.sensor_2_window[self.next_index] = sensor_2_occupied
-        self.occupied_readings += int(sensor_1_occupied)
-        self.occupied_readings += int(sensor_2_occupied)
-        self.next_index = (self.next_index + 1) % self.window_size
-
-        if self.status == STATUS_OCCUPIED:
-            self.led_on = False
-
+    def add_reading(self, sensor_1_occupied, sensor_2_occupied, now_ms):
+        occupied = bool(sensor_1_occupied) or bool(sensor_2_occupied)
+        self.status = STATUS_OCCUPIED if occupied else STATUS_AVAILABLE
+        if occupied:
+            self.last_occupied_at = now_ms
+        self.expire_led(now_ms)
         return self.status
 
-    def set_led(self, value):
-        if value == 0:
-            self.led_on = False
-            return True
+    def last_occupied_age_ms(self, now_ms):
+        if self.last_occupied_at is None:
+            return None
+        age_ms = self.ticks_diff(now_ms, self.last_occupied_at)
+        return max(0, age_ms)
 
-        if value != 1 or not self.is_available or self.led_on:
+    def expire_led(self, now_ms):
+        if (
+            self.led_on
+            and self.led_expires_at is not None
+            and self.ticks_diff(now_ms, self.led_expires_at) >= 0
+        ):
+            self.led_on = False
+            self.led_expires_at = None
+            return True
+        return False
+
+    def set_active(self, command_id, active, duration_ms, now_ms):
+        if not isinstance(command_id, str) or not command_id:
             return False
 
-        self.led_on = True
+        self.expire_led(now_ms)
+        if command_id == self.last_command_id:
+            return True
+
+        if active is True:
+            if not isinstance(duration_ms, int) or duration_ms <= 0:
+                return False
+            self.led_on = True
+            self.led_expires_at = self.ticks_add(now_ms, duration_ms)
+        elif active is False:
+            self.led_on = False
+            self.led_expires_at = None
+        else:
+            return False
+
+        self.last_command_id = command_id
         return True
