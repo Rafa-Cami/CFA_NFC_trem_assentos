@@ -28,11 +28,18 @@ mesmo `event_id` até receber uma resposta.
 
 Um cartão mantido sobre o leitor gera apenas um evento. Duas consultas
 consecutivas sem cartão rearmam o leitor. O PN532 usa uma tentativa passiva por
-consulta para não deixar comandos antigos pendentes.
+consulta para não deixar comandos antigos pendentes. O ACK usa timeout de
+30 ms, a busca usa 180 ms e uma busca sem cartão não é tratada como falha do
+periférico.
 
 Cada assento lê GPIO10 e GPIO7 a cada 500 ms e reporta `OCUPADO` quando qualquer
 entrada estiver alta; caso contrário, reporta `DISPONIVEL`. O servidor mantém o
 TTL de cinco segundos. O ESP apenas mede e aplica concessões temporárias de LED.
+
+Os firmwares usam protocolo 1, versão `1.1.0` e builds identificados no
+registro. Tarefas permanentes são supervisionadas, o event loop é protegido
+por watchdog e a conexão usa heartbeat de dois segundos, três falhas
+consecutivas e backoff exponencial com jitter.
 
 ## Configuração
 
@@ -61,8 +68,9 @@ python -m mpremote connect COM5 fs cp .\ESP_Assentos\src\seat_state.py :seat_sta
 python -m mpremote connect COM5 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
 ```
 
-Envie para COM4 e COM5 cópias de `esp_config.py` com o `SEAT_ID` correspondente.
-Depois, inicie `servidor/src/pc_server.py` e reinicie as placas.
+Os `esp_config.py` contêm credenciais e são ignorados pelo Git. Preserve o
+arquivo já gravado em cada placa durante atualizações de firmware. Depois,
+inicie `servidor/src/pc_server.py` e reinicie as placas.
 
 O teste isolado `start.py`/`nfc_buzzer.py` continua disponível para bancada,
 mas não usa Wi-Fi nem o protocolo integrado.

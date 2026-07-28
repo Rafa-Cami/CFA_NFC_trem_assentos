@@ -15,7 +15,10 @@ firewall e mantenha apenas uma instância do processo.
 - Cada amostra `OCUPADO` define o prazo do assento como cinco segundos após a
   observação. Novas amostras ocupadas substituem o prazo; não acumulam tempo.
 - Uma amostra `DISPONIVEL` não encerra antecipadamente o TTL.
-- Um assento sem amostra por 1,5 segundo é considerado offline.
+- Um assento com amostra de menos de dois segundos fica `ONLINE`; nos cinco
+  segundos seguintes fica `DEGRADADO`; depois fica `OFFLINE`.
+- Um assento degradado mantém seu registro e estado visual, mas não pode ser
+  selecionado para nova ativação.
 - Um NFC válido ativa em paralelo todos os assentos online e disponíveis por
   cinco segundos.
 - Um novo evento NFC válido reinicia a janela de ativação.
@@ -28,13 +31,13 @@ O transporte continua sendo TCP com JSON UTF-8 delimitado por `\n`. Todo
 cliente começa com um registro de versão 1:
 
 ```json
-{"v":1,"type":"register","role":"seat","device_id":"Alberto","seat_id":"Alberto","boot_id":"..."}
+{"v":1,"type":"register","role":"seat","device_id":"Alberto","seat_id":"Alberto","boot_id":"...","firmware_version":"1.1.0","build_id":"seat-robustez-1","reconnect_attempt":0}
 ```
 
 ou:
 
 ```json
-{"v":1,"type":"register","role":"nfc","device_id":"nfc_reader","boot_id":"..."}
+{"v":1,"type":"register","role":"nfc","device_id":"nfc_reader","boot_id":"...","firmware_version":"1.1.0","build_id":"nfc-robustez-1","reconnect_attempt":0}
 ```
 
 Principais mensagens:
@@ -45,10 +48,17 @@ ESP -> PC: nfc_presented
 PC  -> ESP: set_active
 ESP -> PC: set_active_result
 PC  -> ESP: nfc_result
+ESP -> PC: ping
+PC  -> ESP: pong
 ```
 
 Mensagens antigas, como `{"nfc_1":1}`, não são aceitas. Servidor e os três
 ESPs devem ser atualizados de forma coordenada.
+
+O servidor exige o registro em cinco segundos, limita a oito handshakes
+pendentes e devolve uma causa explícita quando protocolo, firmware ou build são
+incompatíveis. Os logs são objetos JSON e incluem duração da sessão, última
+atividade e motivo do encerramento.
 
 ## Rede
 

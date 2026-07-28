@@ -1,4 +1,5 @@
 import collections
+import datetime
 import json
 import socket
 import threading
@@ -8,19 +9,32 @@ import time
 HOST = "0.0.0.0"
 PORT = 5000
 PROTOCOL_VERSION = 1
+SERVER_BUILD_ID = "server-robustez-1"
+EXPECTED_FIRMWARE = {
+    "seat": ("1.1.0", "seat-robustez-1"),
+    "nfc": ("1.1.0", "nfc-robustez-1"),
+}
 MAX_FRAME_BYTES = 512
 SEAT_REQUEST_TIMEOUT_SECONDS = 2.0
-SEAT_SAMPLE_TIMEOUT_SECONDS = 1.5
+REGISTER_TIMEOUT_SECONDS = 5.0
+ONLINE_SAMPLE_SECONDS = 2.0
+DEGRADED_GRACE_SECONDS = 5.0
+OFFLINE_SAMPLE_SECONDS = ONLINE_SAMPLE_SECONDS + DEGRADED_GRACE_SECONDS
+CLIENT_ACTIVITY_TIMEOUT_SECONDS = 6.0
 SEAT_MONITOR_INTERVAL_SECONDS = 0.1
 OCCUPANCY_TTL_SECONDS = 5.0
 ACTIVE_DURATION_MS = 5000
 NFC_EVENT_MAX_AGE_MS = 30000
 NFC_CACHE_SECONDS = 300.0
 NFC_CACHE_MAX_ENTRIES = 256
+MAX_PENDING_REGISTRATIONS = 8
 
 STATUS_OCCUPIED = "OCUPADO"
 STATUS_AVAILABLE = "DISPONIVEL"
 VALID_SEAT_STATUSES = (STATUS_OCCUPIED, STATUS_AVAILABLE)
+CONNECTIVITY_ONLINE = "ONLINE"
+CONNECTIVITY_DEGRADED = "DEGRADADO"
+CONNECTIVITY_OFFLINE = "OFFLINE"
 
 seats = {}
 seats_lock = threading.RLock()
@@ -31,6 +45,29 @@ command_id_lock = threading.Lock()
 next_command_id = 1
 nfc_cache = collections.OrderedDict()
 nfc_cache_lock = threading.Lock()
+pending_registrations = threading.BoundedSemaphore(
+    MAX_PENDING_REGISTRATIONS
+)
+
+
+def log_event(event, **fields):
+    record = {
+        "timestamp": datetime.datetime.now().astimezone().isoformat(
+            timespec="milliseconds"
+        ),
+        "monotonic_s": round(time.monotonic(), 3),
+        "event": event,
+    }
+    record.update(fields)
+    print(
+        json.dumps(
+            record,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+        flush=True,
+    )
 
 
 class SeatRequestError(Exception):
@@ -39,6 +76,13 @@ class SeatRequestError(Exception):
 
 class SeatRequestTimeout(SeatRequestError):
     pass
+
+
+class RegisterError(ValueError):
+    def __init__(self, reason, message, **details):
+        super().__init__(message)
+        self.reason = reason
+        self.details = details
 
 
 class PendingResponse:
@@ -60,13 +104,38 @@ class ClientConnection:
     def __init__(self, connection, address):
         self.connection = connection
         self.address = address
+        self.connected_at = time.monotonic()
+        self.last_activity_at = self.connected_at
         self.seat_id = None
         self.device_id = None
+        self.role = None
         self.boot_id = None
+        self.firmware_version = None
+        self.build_id = None
+        self.reconnect_attempt = None
+        self.uptime_ms = None
+        self.free_heap_bytes = None
+        self.pn532_errors = None
+        self.pn532_recoveries = None
+        self.close_reason = None
         self.send_lock = threading.Lock()
         self.pending_lock = threading.Lock()
         self.pending = {}
         self.closed = False
+
+    def touch(self, now=None):
+        self.last_activity_at = time.monotonic() if now is None else now
+
+    def update_telemetry(self, message):
+        for name in (
+            "uptime_ms",
+            "free_heap_bytes",
+            "pn532_errors",
+            "pn532_recoveries",
+        ):
+            value = message.get(name)
+            if isinstance(value, int) and value >= 0:
+                setattr(self, name, value)
 
     def send(self, message):
         payload = (
@@ -130,11 +199,13 @@ class ClientConnection:
         pending.event.set()
         return True
 
-    def close(self):
+    def close(self, reason=None):
         with self.pending_lock:
             if self.closed:
                 return
             self.closed = True
+            if reason is not None:
+                self.close_reason = reason
             pending = list(self.pending.values())
             self.pending.clear()
         for item in pending:
@@ -166,6 +237,7 @@ class SeatRecord:
         self.last_reported_status = None
         self.command_lock = threading.RLock()
         self.sync_inflight = False
+        self.last_connectivity = CONNECTIVITY_OFFLINE
 
     def attach(self, client, boot_id):
         with self.lock:
@@ -179,7 +251,7 @@ class SeatRecord:
             client.seat_id = self.seat_id
             client.boot_id = boot_id
         if old_client is not None and old_client is not client:
-            old_client.close()
+            old_client.close("replaced_by_new_connection")
 
     def detach(self, client):
         with self.lock:
@@ -195,12 +267,27 @@ class SeatRecord:
             else STATUS_AVAILABLE
         )
 
-    def online_at(self, now):
-        return (
+    def connectivity_at(self, now):
+        if (
             self.client is not None
             and self.last_sample_at is not None
-            and now - self.last_sample_at < SEAT_SAMPLE_TIMEOUT_SECONDS
+            and now - self.last_sample_at < ONLINE_SAMPLE_SECONDS
+        ):
+            return CONNECTIVITY_ONLINE
+        reference = (
+            self.last_sample_at
+            if self.last_sample_at is not None
+            else self.connected_at
         )
+        if (
+            reference is not None
+            and now - reference < OFFLINE_SAMPLE_SECONDS
+        ):
+            return CONNECTIVITY_DEGRADED
+        return CONNECTIVITY_OFFLINE
+
+    def online_at(self, now):
+        return self.connectivity_at(now) == CONNECTIVITY_ONLINE
 
     def update_sample(self, client, message, now=None):
         now = time.monotonic() if now is None else now
@@ -248,7 +335,11 @@ class SeatRecord:
             self.last_reported_status = current
 
         if changed:
-            print("Assento {}: {}".format(self.seat_id, current))
+            log_event(
+                "seat_status_changed",
+                seat_id=self.seat_id,
+                status=current,
+            )
         return True
 
     def snapshot(self, now=None):
@@ -257,6 +348,7 @@ class SeatRecord:
             return {
                 "client": self.client,
                 "online": self.online_at(now),
+                "connectivity": self.connectivity_at(now),
                 "status": self.status_at(now),
                 "led_active": self.led_active,
                 "desired_active_until": self.desired_active_until,
@@ -282,7 +374,15 @@ def register_seat(client, message):
         raise ValueError("register without valid boot_id")
     record = get_or_create_seat(seat_id)
     record.attach(client, boot_id)
-    print("Assento registrado: {} ({})".format(seat_id, client.address))
+    log_event(
+        "seat_registered",
+        seat_id=seat_id,
+        address=client.address,
+        boot_id=boot_id,
+        firmware_version=client.firmware_version,
+        build_id=client.build_id,
+        reconnect_attempt=client.reconnect_attempt,
+    )
     return record
 
 
@@ -296,10 +396,16 @@ def register_nfc(client, message):
         old_client = nfc_clients.get(device_id)
         nfc_clients[device_id] = client
     if old_client is not None and old_client is not client:
-        old_client.close()
-    print("Leitor NFC registrado: {} boot={} ({})".format(
-        device_id, boot_id, client.address
-    ))
+        old_client.close("replaced_by_new_connection")
+    log_event(
+        "nfc_registered",
+        device_id=device_id,
+        address=client.address,
+        boot_id=boot_id,
+        firmware_version=client.firmware_version,
+        build_id=client.build_id,
+        reconnect_attempt=client.reconnect_attempt,
+    )
 
 
 def unregister_nfc(client):
@@ -311,8 +417,7 @@ def unregister_nfc(client):
 
 
 def detach_seat(record, client):
-    if record is not None and record.detach(client):
-        print("Assento desconectado: {}".format(record.seat_id))
+    return record is not None and record.detach(client)
 
 
 def get_seat_records():
@@ -351,9 +456,10 @@ def command_record(record, active, duration_ms, command_id):
 def schedule_reconcile(record):
     now = time.monotonic()
     snapshot = record.snapshot(now)
+    if snapshot["connectivity"] != CONNECTIVITY_ONLINE:
+        return
     should_be_active = (
-        snapshot["online"]
-        and snapshot["status"] == STATUS_AVAILABLE
+        snapshot["status"] == STATUS_AVAILABLE
         and snapshot["desired_active_until"] > now
     )
     if snapshot["client"] is None or (
@@ -370,9 +476,10 @@ def schedule_reconcile(record):
             with record.command_lock:
                 now = time.monotonic()
                 snapshot = record.snapshot(now)
+                if snapshot["connectivity"] != CONNECTIVITY_ONLINE:
+                    return
                 should_be_active = (
-                    snapshot["online"]
-                    and snapshot["status"] == STATUS_AVAILABLE
+                    snapshot["status"] == STATUS_AVAILABLE
                     and snapshot["desired_active_until"] > now
                 )
                 if snapshot["led_active"] == should_be_active:
@@ -542,7 +649,11 @@ def handle_nfc_message(message, now=None):
                 cached = nfc_cache.get(event_id)
                 if cached is not None:
                     return dict(cached[1])
-            print("NFC recebido: {} ({})".format(card_id, event_id))
+            log_event(
+                "nfc_received",
+                card_id=card_id,
+                event_id=event_id,
+            )
             result = activate_available_seats(event_id, now)
 
     response = {
@@ -576,31 +687,89 @@ def read_json_line(response_file, address):
 
 
 def validate_register(message):
-    if (
-        message.get("v") != PROTOCOL_VERSION
-        or message.get("type") != "register"
-    ):
-        raise ValueError("first frame must be a v1 register")
+    if message.get("type") != "register":
+        raise RegisterError(
+            "invalid_first_frame",
+            "first frame must be register",
+        )
+    if message.get("v") != PROTOCOL_VERSION:
+        raise RegisterError(
+            "protocol_mismatch",
+            "unsupported protocol version",
+            expected_protocol_version=PROTOCOL_VERSION,
+        )
     role = message.get("role")
     if role not in ("seat", "nfc"):
-        raise ValueError("invalid role")
-    if not isinstance(message.get("device_id"), str):
-        raise ValueError("invalid device_id")
-    if not isinstance(message.get("boot_id"), str):
-        raise ValueError("invalid boot_id")
+        raise RegisterError("invalid_role", "invalid role")
+    device_id = message.get("device_id")
+    boot_id = message.get("boot_id")
+    if not isinstance(device_id, str) or not device_id:
+        raise RegisterError("invalid_device_id", "invalid device_id")
+    if not isinstance(boot_id, str) or not boot_id:
+        raise RegisterError("invalid_boot_id", "invalid boot_id")
+    expected_version, expected_build = EXPECTED_FIRMWARE[role]
+    if message.get("firmware_version") != expected_version:
+        raise RegisterError(
+            "incompatible_firmware",
+            "incompatible firmware version",
+            expected_firmware_version=expected_version,
+        )
+    if message.get("build_id") != expected_build:
+        raise RegisterError(
+            "incompatible_build",
+            "incompatible firmware build",
+            expected_build_id=expected_build,
+        )
+    reconnect_attempt = message.get("reconnect_attempt")
+    if not isinstance(reconnect_attempt, int) or reconnect_attempt < 0:
+        raise RegisterError(
+            "invalid_reconnect_attempt",
+            "invalid reconnect attempt",
+        )
     return role
 
 
 def handle_client(connection, address):
     client = ClientConnection(connection, address)
-    response_file = connection.makefile("r", encoding="utf-8")
+    response_file = None
     record = None
-    print("Dispositivo conectado: {}".format(address))
+    disconnect_reason = "peer_closed"
+    log_event("device_connected", address=address)
     try:
+        connection.settimeout(REGISTER_TIMEOUT_SECONDS)
+        response_file = connection.makefile("r", encoding="utf-8")
         register = read_json_line(response_file, address)
         if register is None:
+            disconnect_reason = "closed_before_register"
             return
-        role = validate_register(register)
+        try:
+            role = validate_register(register)
+        except RegisterError as error:
+            disconnect_reason = error.reason
+            rejection = {
+                "v": PROTOCOL_VERSION,
+                "type": "register_ack",
+                "accepted": False,
+                "reason": error.reason,
+                "server_build_id": SERVER_BUILD_ID,
+            }
+            rejection.update(error.details)
+            client.send(rejection)
+            log_event(
+                "register_rejected",
+                address=address,
+                reason=error.reason,
+                details=error.details,
+            )
+            return
+        connection.settimeout(None)
+        client.role = role
+        client.device_id = register["device_id"]
+        client.boot_id = register["boot_id"]
+        client.firmware_version = register["firmware_version"]
+        client.build_id = register["build_id"]
+        client.reconnect_attempt = register["reconnect_attempt"]
+        client.update_telemetry(register)
         if role == "seat":
             record = register_seat(client, register)
         else:
@@ -610,6 +779,7 @@ def handle_client(connection, address):
                 "v": PROTOCOL_VERSION,
                 "type": "register_ack",
                 "accepted": True,
+                "server_build_id": SERVER_BUILD_ID,
             }
         )
 
@@ -617,6 +787,20 @@ def handle_client(connection, address):
             message = read_json_line(response_file, address)
             if message is None:
                 break
+            client.touch()
+            client.update_telemetry(message)
+            if (
+                message.get("v") == PROTOCOL_VERSION
+                and message.get("type") == "ping"
+            ):
+                client.send(
+                    {
+                        "v": PROTOCOL_VERSION,
+                        "type": "pong",
+                        "ping_id": message.get("ping_id"),
+                    }
+                )
+                continue
             if role == "seat":
                 if message.get("type") == "seat_sample":
                     if record.update_sample(client, message):
@@ -624,29 +808,46 @@ def handle_client(connection, address):
                 elif not client.deliver_response(message):
                     raise ValueError("invalid seat message")
             else:
-                if (
-                    message.get("v") == PROTOCOL_VERSION
-                    and message.get("type") == "ping"
-                ):
-                    client.send(
-                        {
-                            "v": PROTOCOL_VERSION,
-                            "type": "pong",
-                        }
-                    )
-                else:
-                    client.send(handle_nfc_message(message))
+                client.send(handle_nfc_message(message))
+    except socket.timeout:
+        disconnect_reason = "register_timeout"
     except (OSError, ValueError) as error:
-        print("Erro com {}: {}".format(address, error))
+        disconnect_reason = client.close_reason or type(error).__name__
+        log_event(
+            "client_error",
+            address=address,
+            device_id=client.device_id,
+            role=client.role,
+            reason=disconnect_reason,
+            error=str(error),
+        )
     finally:
         detach_seat(record, client)
         unregister_nfc(client)
-        try:
-            response_file.close()
-        except OSError:
-            pass
-        client.close()
-        print("Dispositivo desconectado: {}".format(address))
+        if response_file is not None:
+            try:
+                response_file.close()
+            except OSError:
+                pass
+        client.close(disconnect_reason)
+        now = time.monotonic()
+        log_event(
+            "device_disconnected",
+            address=address,
+            device_id=client.device_id,
+            role=client.role,
+            boot_id=client.boot_id,
+            firmware_version=client.firmware_version,
+            build_id=client.build_id,
+            reason=client.close_reason or disconnect_reason,
+            duration_s=round(now - client.connected_at, 3),
+            last_activity_age_s=round(now - client.last_activity_at, 3),
+            uptime_ms=client.uptime_ms,
+            free_heap_bytes=client.free_heap_bytes,
+            pn532_errors=client.pn532_errors,
+            pn532_recoveries=client.pn532_recoveries,
+        )
+        pending_registrations.release()
 
 
 def monitor_seats():
@@ -656,29 +857,40 @@ def monitor_seats():
         for record in get_seat_records():
             snapshot = record.snapshot(now)
             client = snapshot["client"]
+            connectivity = snapshot["connectivity"]
             with record.lock:
-                connected_at = record.connected_at
+                previous = record.last_connectivity
+                record.last_connectivity = connectivity
+            if previous != connectivity:
+                log_event(
+                    "seat_connectivity_changed",
+                    seat_id=record.seat_id,
+                    previous=previous,
+                    connectivity=connectivity,
+                    last_sample_age_s=(
+                        None
+                        if snapshot["last_sample_at"] is None
+                        else round(now - snapshot["last_sample_at"], 3)
+                    ),
+                )
             if (
                 client is not None
-                and (
-                    snapshot["last_sample_at"] is not None
-                    or connected_at is not None
-                )
-                and not snapshot["online"]
-                and now
-                - (
-                    snapshot["last_sample_at"]
-                    if snapshot["last_sample_at"] is not None
-                    else connected_at
-                )
-                >= SEAT_SAMPLE_TIMEOUT_SECONDS
+                and now - client.last_activity_at
+                >= CLIENT_ACTIVITY_TIMEOUT_SECONDS
             ):
-                print("Timeout do assento {}".format(record.seat_id))
-                detach_seat(record, client)
-                client.close()
+                client.close("heartbeat_timeout")
                 continue
-            if client is not None:
+            if client is not None and connectivity == CONNECTIVITY_ONLINE:
                 schedule_reconcile(record)
+        with nfc_clients_lock:
+            current_nfc_clients = list(nfc_clients.values())
+        for client in current_nfc_clients:
+            if (
+                not client.closed
+                and now - client.last_activity_at
+                >= CLIENT_ACTIVITY_TIMEOUT_SECONDS
+            ):
+                client.close("heartbeat_timeout")
 
 
 def main():
@@ -689,18 +901,38 @@ def main():
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((HOST, PORT))
     server.listen(8)
-    print("Servidor ouvindo na porta {}".format(PORT))
+    log_event(
+        "server_started",
+        host=HOST,
+        port=PORT,
+        protocol_version=PROTOCOL_VERSION,
+        build_id=SERVER_BUILD_ID,
+    )
     threading.Thread(target=monitor_seats, daemon=True).start()
     try:
         while True:
             connection, address = server.accept()
+            try:
+                connection.setsockopt(
+                    socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1
+                )
+            except OSError:
+                pass
+            if not pending_registrations.acquire(blocking=False):
+                log_event(
+                    "connection_rejected",
+                    address=address,
+                    reason="too_many_pending_registrations",
+                )
+                connection.close()
+                continue
             threading.Thread(
                 target=handle_client,
                 args=(connection, address),
                 daemon=True,
             ).start()
     except KeyboardInterrupt:
-        print("Servidor encerrado")
+        log_event("server_stopped", reason="keyboard_interrupt")
     finally:
         server.close()
 

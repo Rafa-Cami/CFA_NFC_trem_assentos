@@ -1,4 +1,5 @@
 import json
+import socket
 import sys
 import threading
 import time
@@ -17,6 +18,9 @@ class FakeClient:
         self.applied = applied
         self.seat_id = None
         self.boot_id = None
+        self.firmware_version = None
+        self.build_id = None
+        self.reconnect_attempt = 0
         self.closed = False
         self.requests = []
 
@@ -80,6 +84,8 @@ class PcServerTests(unittest.TestCase):
             pc_server.seats.clear()
         with pc_server.nfc_cache_lock:
             pc_server.nfc_cache.clear()
+        with pc_server.nfc_clients_lock:
+            pc_server.nfc_clients.clear()
         with pc_server.command_id_lock:
             pc_server.next_command_id = 1
 
@@ -148,10 +154,53 @@ class PcServerTests(unittest.TestCase):
         self.assertEqual(alberto.status_at(1.0), pc_server.STATUS_OCCUPIED)
         self.assertEqual(bete.status_at(1.0), pc_server.STATUS_AVAILABLE)
 
-    def test_sample_timeout_blocks_activation(self):
+    def test_connectivity_boundaries(self):
         record, _ = connected_seat("Alberto", 10.0)
-        self.assertTrue(record.snapshot(11.499)["online"])
-        self.assertFalse(record.snapshot(11.5)["online"])
+        self.assertEqual(
+            record.snapshot(11.999)["connectivity"],
+            pc_server.CONNECTIVITY_ONLINE,
+        )
+        self.assertEqual(
+            record.snapshot(12.0)["connectivity"],
+            pc_server.CONNECTIVITY_DEGRADED,
+        )
+        self.assertEqual(
+            record.snapshot(16.999)["connectivity"],
+            pc_server.CONNECTIVITY_DEGRADED,
+        )
+        self.assertEqual(
+            record.snapshot(17.0)["connectivity"],
+            pc_server.CONNECTIVITY_OFFLINE,
+        )
+
+    def test_disconnected_seat_degrades_and_fresh_sample_recovers(self):
+        record, client = connected_seat("Alberto", 10.0)
+        record.detach(client)
+        self.assertEqual(
+            record.snapshot(10.1)["connectivity"],
+            pc_server.CONNECTIVITY_DEGRADED,
+        )
+        replacement = FakeClient()
+        record.attach(replacement, "boot")
+        self.assertTrue(
+            record.update_sample(
+                replacement,
+                sample("Alberto", "boot", 1),
+                now=10.2,
+            )
+        )
+        self.assertEqual(
+            record.snapshot(10.2)["connectivity"],
+            pc_server.CONNECTIVITY_ONLINE,
+        )
+
+    def test_degraded_seat_is_not_activated(self):
+        _, client = connected_seat("Alberto", 100.0)
+        result = pc_server.activate_available_seats(
+            "evt", now=102.0
+        )
+        self.assertEqual(result["status"], "NO_AVAILABLE_SEATS")
+        self.assertEqual(client.requests, [])
 
     def test_activates_all_available_seats(self):
         _, alberto = connected_seat("Alberto", 100.0)
@@ -234,6 +283,71 @@ class PcServerTests(unittest.TestCase):
             thread.join(1)
         self.assertEqual(len(client.requests), 1)
         self.assertEqual(results[0], results[1])
+
+    def test_register_compatibility_is_explicit(self):
+        valid = {
+            "v": 1,
+            "type": "register",
+            "role": "nfc",
+            "device_id": "nfc_reader",
+            "boot_id": "boot",
+            "firmware_version": "1.1.0",
+            "build_id": "nfc-robustez-1",
+            "reconnect_attempt": 0,
+        }
+        self.assertEqual(pc_server.validate_register(valid), "nfc")
+        invalid = dict(valid)
+        invalid["firmware_version"] = "1.0.0"
+        with self.assertRaises(pc_server.RegisterError) as context:
+            pc_server.validate_register(invalid)
+        self.assertEqual(
+            context.exception.reason, "incompatible_firmware"
+        )
+        self.assertEqual(
+            context.exception.details["expected_firmware_version"],
+            "1.1.0",
+        )
+
+    def test_register_ping_pong_cycle(self):
+        server_socket, client_socket = socket.socketpair()
+        self.assertTrue(
+            pc_server.pending_registrations.acquire(blocking=False)
+        )
+        thread = threading.Thread(
+            target=pc_server.handle_client,
+            args=(server_socket, ("local", 1234)),
+            daemon=True,
+        )
+        thread.start()
+        stream = client_socket.makefile("rwb")
+        register = {
+            "v": 1,
+            "type": "register",
+            "role": "nfc",
+            "device_id": "nfc_reader",
+            "boot_id": "boot",
+            "firmware_version": "1.1.0",
+            "build_id": "nfc-robustez-1",
+            "reconnect_attempt": 2,
+        }
+        stream.write((json.dumps(register) + "\n").encode())
+        stream.flush()
+        ack = json.loads(stream.readline())
+        self.assertTrue(ack["accepted"])
+        self.assertEqual(
+            ack["server_build_id"], "server-robustez-1"
+        )
+        stream.write(
+            b'{"v":1,"type":"ping","ping_id":42}\n'
+        )
+        stream.flush()
+        pong = json.loads(stream.readline())
+        self.assertEqual(pong["type"], "pong")
+        self.assertEqual(pong["ping_id"], 42)
+        stream.close()
+        client_socket.close()
+        thread.join(1)
+        self.assertFalse(thread.is_alive())
 
 
 if __name__ == "__main__":

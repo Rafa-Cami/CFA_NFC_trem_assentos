@@ -75,6 +75,12 @@ class SeatStateTests(unittest.TestCase):
         state.add_reading(True, False, period - 100)
         self.assertEqual(state.last_occupied_age_ms(50), 150)
 
+    def test_sample_sequence_survives_connection_restarts(self):
+        state = SeatState()
+        self.assertEqual(state.next_sample_sequence(), 0)
+        self.assertEqual(state.next_sample_sequence(), 1)
+        self.assertEqual(state.sample_sequence, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
