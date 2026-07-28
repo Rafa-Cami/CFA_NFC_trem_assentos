@@ -60,7 +60,7 @@ O projeto utiliza:
 
 **código em micropython e comunicação via TCP/IP com necessidade de os ESP32 e o Servidor se conectarem em mesma rede**
 
-## Documentação do Código:
+## 📖 Documentação do Código:
 
 ### Estrutura do Projeto:
 O projeto está organizado em três blocos principais, cada um com uma função bem definida no funcionamento do sistema:
