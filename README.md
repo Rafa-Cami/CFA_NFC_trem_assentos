@@ -108,29 +108,6 @@ Quando encontra um assento adequado, envia um comando para acender o LED desse a
 Esse fluxo torna o projeto escalável e modular: o leitor NFC não precisa conhecer diretamente a lógica dos assentos; ele apenas notifica o servidor, e o servidor coordena a decisão com base no estado de todos os assentos conectados.
 
 **Esquema de mensagens:**
-                      +------------------+
-                      |    Servidor      |
-                      |   Broker MQTT    |
-                      +--------+---------+
-                               |
-            +------------------+------------------+
-            |                                     |
-            |                                     |
-   +--------v--------+                   +--------v--------+
-   |   ESP32 NFC     |                   | ESP32 Assento   |
-   | Leitor PN532    |                   | Sensor + LED    |
-   +--------+--------+                   +--------+--------+
-            |                                     |
-            |---- nfc_* ------------------------->|
-            |                                     |
-            |<--- get_status ---------------------|
-            |                                     |
-            |---- seat_status ------------------->|
-            |                                     |
-            |<--- set_led ------------------------|
-            |                                     |
-            |---- set_led_result ---------------->|
-
 
 | **Mensagem**     | **Fluxo**              | **Função**           |
 | ---------------- | ---------------------- | -------------------- |
