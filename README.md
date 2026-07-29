@@ -64,8 +64,23 @@ O projeto utiliza:
 
 ### Estrutura do Projeto:
 O projeto está organizado em três blocos principais, cada um com uma função bem definida no funcionamento do sistema:
+
 - Módulo de leitura NFC: localizado em 'esp_comunicando.py' e 'nfc_buzzer.py'. Esse módulo é responsável por interagir com o leitor PN532, ler o UID de cartões ou chaveiros NFC e identificar se o identificador corresponde a um usuário autorizado, além da comunicação com o servidor. Também há uma camada de inicialização em 'start.py', que chama o fluxo principal do leitor.
+
+<p align="center">
+  <img src="./docs/nfc.png" width="500" /><br/>
+  <b>Priorizah: Esquema do Módulo de Leitor NFC</b><br/>
+  <text>🚈 Relatório do projeto</text>
+</p>
+
 - Módulo de assentos: implementado em 'sensor_v1.py' e 'seat_state.py'. Aqui ficam os sensores de toque capacitivo, o LED de indicação e a lógica de estado do assento. O código decide se o assento está ocupado ou disponível e controla se o LED deve permanecer aceso ou apagado.
+
+<p align="center">
+  <img src="./docs/sensor.png" width="500" /><br/>
+  <b>Priorizah: Esquema do Módulo de Assentos</b><br/>
+  <text>🚈 Relatório do projeto</text>
+</p>
+
 - Servidor central: implementado em 'pc_server.py'. Esse componente funciona como cérebro do sistema. Ele recebe mensagens dos ESPs, mantém um registro dos assentos conectados, consulta o estado deles e decide qual assento deve receber o sinal de indicação após um evento NFC.
 
 **A organização do repositório segue essa divisão: uma pasta para o ESP de NFC, outra para o ESP dos assentos e outra para o servidor. Além disso, há arquivos de configuração local, como esp_config.py, que definem Wi-Fi, IP do servidor e parâmetros específicos de cada dispositivo.**
@@ -108,28 +123,6 @@ Quando encontra um assento adequado, envia um comando para acender o LED desse a
 Esse fluxo torna o projeto escalável e modular: o leitor NFC não precisa conhecer diretamente a lógica dos assentos; ele apenas notifica o servidor, e o servidor coordena a decisão com base no estado de todos os assentos conectados.
 
 **Esquema de mensagens:**
-                      +------------------+
-                      |    Servidor      |
-                      |   Broker MQTT    |
-                      +--------+---------+
-                               |
-            +------------------+------------------+
-            |                                     |
-            |                                     |
-   +--------v--------+                   +--------v--------+
-   |   ESP32 NFC     |                   | ESP32 Assento   |
-   | Leitor PN532    |                   | Sensor + LED    |
-   +--------+--------+                   +--------+--------+
-            |                                     |
-            |---- nfc_* ------------------------->|
-            |                                     |
-            |<--- get_status ---------------------|
-            |                                     |
-            |---- seat_status ------------------->|
-            |                                     |
-            |<--- set_led ------------------------|
-            |                                     |
-            |---- set_led_result ---------------->|
 
 
 | **Mensagem**     | **Fluxo**              | **Função**           |
