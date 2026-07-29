@@ -69,14 +69,14 @@ O projeto está organizado em três blocos principais, cada um com uma função 
 
 <p align="center">
   <img src="./docs/nfc.png" width="200" /><br/>
-  <b>Priorizah: Esquema do Módulo de Leitor NFC</b><br/>
+  <b>Esquema do Módulo de Leitor NFC</b><br/>
 </p>
 
 - Módulo de assentos: implementado em 'sensor_v1.py' e 'seat_state.py'. Aqui ficam os sensores de toque capacitivo, o LED de indicação e a lógica de estado do assento. O código decide se o assento está ocupado ou disponível e controla se o LED deve permanecer aceso ou apagado.
 
 <p align="center">
   <img src="./docs/sensor.png" width="200" /><br/>
-  <b>Priorizah: Esquema do Módulo de Assentos</b><br/>
+  <b>Esquema do Módulo de Assentos</b><br/>
 </p>
 
 - Servidor central: implementado em 'pc_server.py'. Esse componente funciona como cérebro do sistema. Ele recebe mensagens dos ESPs, mantém um registro dos assentos conectados, consulta o estado deles e decide qual assento deve receber o sinal de indicação após um evento NFC.
