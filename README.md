@@ -108,6 +108,29 @@ Quando encontra um assento adequado, envia um comando para acender o LED desse a
 Esse fluxo torna o projeto escalável e modular: o leitor NFC não precisa conhecer diretamente a lógica dos assentos; ele apenas notifica o servidor, e o servidor coordena a decisão com base no estado de todos os assentos conectados.
 
 **Esquema de mensagens:**
+                      +------------------+
+                      |    Servidor      |
+                      |   Broker MQTT    |
+                      +--------+---------+
+                               |
+            +------------------+------------------+
+            |                                     |
+            |                                     |
+   +--------v--------+                   +--------v--------+
+   |   ESP32 NFC     |                   | ESP32 Assento   |
+   | Leitor PN532    |                   | Sensor + LED    |
+   +--------+--------+                   +--------+--------+
+            |                                     |
+            |---- nfc_* ------------------------->|
+            |                                     |
+            |<--- get_status ---------------------|
+            |                                     |
+            |---- seat_status ------------------->|
+            |                                     |
+            |<--- set_led ------------------------|
+            |                                     |
+            |---- set_led_result ---------------->|
+
 
 | **Mensagem**     | **Fluxo**              | **Função**           |
 | ---------------- | ---------------------- | -------------------- |
@@ -128,7 +151,7 @@ No projeto, ela é essencial para:
   - configurar o leitor NFC PN532;
   - controlar o buzzer;
   - ler os sensores de toque e acionar o LED.
- 
+
 - Network: é usada para gerenciar a conexão Wi-Fi no ESP32. Com ela, o dispositivo:
   - ativa a interface Wi-Fi;
   - conecta-se à rede;
@@ -153,7 +176,7 @@ No projeto, ela é usada principalmente no servidor e também no ESP32 para envi
   - atender múltiplos clientes ao mesmo tempo;
   - processar mensagens de diferentes dispositivos;
   - manter a comunicação sem bloquear o fluxo principal.
- 
+
 ### Outros recursos de software utilizados
 Além da lógica principal de leitura NFC, controle de assentos e comunicação com o servidor, o sistema também faz uso de alguns recursos de software que aumentam sua robustez, organização e facilidade de manutenção.
 
