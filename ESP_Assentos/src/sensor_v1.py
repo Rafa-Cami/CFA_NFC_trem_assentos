@@ -76,7 +76,7 @@ def sync_led(state):
     led.value(1 if state.led_on else 0)
 
 
-async def sensor_loop(state):
+async def sensor_loop(state, pending_events):
     next_read_at = time.ticks_add(time.ticks_ms(), SENSOR_INTERVAL_MS)
 
     while True:
@@ -86,8 +86,20 @@ async def sensor_loop(state):
 
         sensor_1_occupied = sensor_1.value() != AVAILABLE_SENSOR_VALUE
         sensor_2_occupied = sensor_2.value() != AVAILABLE_SENSOR_VALUE
+        led_was_on = state.led_on
         state.add_reading(sensor_1_occupied, sensor_2_occupied)
         sync_led(state)
+
+        if led_was_on and not state.led_on:
+            print("LED OFF because seat became occupied")
+            pending_events.append(
+                {
+                    "type": "seat_led_state",
+                    "seat_id": SEAT_ID,
+                    "led_on": False,
+                    "reason": "occupied",
+                }
+            )
 
         next_read_at = time.ticks_add(next_read_at, SENSOR_INTERVAL_MS)
         if time.ticks_diff(time.ticks_ms(), next_read_at) >= 0:
@@ -295,7 +307,7 @@ async def main_async():
         )
     )
 
-    asyncio.create_task(sensor_loop(state))
+    asyncio.create_task(sensor_loop(state, pending_events))
     asyncio.create_task(led_timer_loop(state, pending_events))
     await communication_loop(state, pending_events)
 

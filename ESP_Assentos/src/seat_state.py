@@ -52,6 +52,9 @@ class SeatState:
         self.occupied_readings += int(sensor_2_occupied)
         self.next_index = (self.next_index + 1) % self.window_size
 
+        if (sensor_1_occupied or sensor_2_occupied) and self.led_on:
+            self.set_led(0)
+
         return self.status
 
     def set_led(self, value, deadline_ms=None):

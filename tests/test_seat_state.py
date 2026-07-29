@@ -54,24 +54,25 @@ class SeatStateTests(unittest.TestCase):
         self.assertEqual(state.status, STATUS_OCCUPIED)
         self.assertEqual(state.occupied_readings, 9)
 
-    def test_led_stays_on_when_seat_becomes_occupied(self):
-        state = SeatState(window_size=10)
+    def test_either_sensor_turns_off_active_led_immediately(self):
+        for occupied_pair in ((True, False), (False, True), (True, True)):
+            with self.subTest(occupied_pair=occupied_pair):
+                state = SeatState(window_size=10)
+                self.assertEqual(state.set_led(1, 10000), LED_OCCUPIED)
+                for _ in range(10):
+                    state.add_reading(False, False)
 
-        self.assertEqual(state.set_led(1, 10000), LED_OCCUPIED)
-        for _ in range(10):
-            state.add_reading(False, False)
+                self.assertEqual(state.set_led(1, 10000), LED_ACTIVATED)
+                self.assertTrue(state.led_on)
+                self.assertEqual(state.set_led(1, 20000), LED_ALREADY_ACTIVE)
+                self.assertEqual(state.led_deadline_ms, 10000)
 
-        self.assertEqual(state.set_led(1, 10000), LED_ACTIVATED)
-        self.assertTrue(state.led_on)
-        self.assertEqual(state.set_led(1, 20000), LED_ALREADY_ACTIVE)
-        self.assertEqual(state.led_deadline_ms, 10000)
-
-        state.add_reading(False, True)
-        self.assertTrue(state.led_on)
-        self.assertEqual(state.set_led(1, 20000), LED_ALREADY_ACTIVE)
-        self.assertEqual(state.set_led(2), LED_INVALID_VALUE)
-        self.assertEqual(state.set_led(0), LED_DEACTIVATED)
-        self.assertFalse(state.led_on)
+                state.add_reading(*occupied_pair)
+                self.assertFalse(state.led_on)
+                self.assertIsNone(state.led_deadline_ms)
+                self.assertEqual(state.set_led(1, 20000), LED_OCCUPIED)
+                self.assertEqual(state.set_led(2), LED_INVALID_VALUE)
+                self.assertEqual(state.set_led(0), LED_DEACTIVATED)
 
     def test_led_expires_only_at_original_deadline(self):
         state = SeatState(window_size=1)
