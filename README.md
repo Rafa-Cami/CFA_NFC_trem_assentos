@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="./docs/priorizahlogo.png" width="100" /><br/>
-  <b>Priorizah: Sistema de sensores para assentos preferenciais</b><br/>
+  <img src="./docs/priorizalogo.png" width="100" /><br/>
+  <b>Prioriza: Sistema de sensores para assentos preferenciais</b><br/>
   <text>🚈 Relatório do projeto</text>
 </p>
 
