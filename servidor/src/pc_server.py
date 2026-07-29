@@ -231,10 +231,10 @@ def get_registered_seats():
         return [(seat_id, seats[seat_id]) for seat_id in sorted(seats)]
 
 
-def activation_result(result, seat_id):
+def activation_result(activated_seat_ids, already_active_seat_ids):
     return {
-        "result": result,
-        "seat_id": seat_id,
+        "activated_seat_ids": activated_seat_ids,
+        "already_active_seat_ids": already_active_seat_ids,
     }
 
 
@@ -258,8 +258,9 @@ def handle_seat_event(client, message):
     return True
 
 
-def activate_available_seat():
-    already_active_seat = None
+def activate_available_seats():
+    activated_seat_ids = []
+    already_active_seat_ids = []
 
     for seat_id, client in get_registered_seats():
         try:
@@ -283,8 +284,7 @@ def activate_available_seat():
                             f"LED já ativo no assento {seat_id}; "
                             "temporizador mantido"
                         )
-                    if already_active_seat is None:
-                        already_active_seat = seat_id
+                    already_active_seat_ids.append(seat_id)
                     continue
 
                 if status == STATUS_OCCUPIED:
@@ -309,15 +309,15 @@ def activate_available_seat():
                         f"LED ativado no assento {seat_id}; "
                         "desligamento em 10 s"
                     )
-                    return activation_result(LED_ACTIVATED, seat_id)
+                    activated_seat_ids.append(seat_id)
+                    continue
 
                 if result == LED_ALREADY_ACTIVE:
                     print(
                         f"LED já ativo no assento {seat_id}; "
                         "temporizador mantido"
                     )
-                    if already_active_seat is None:
-                        already_active_seat = seat_id
+                    already_active_seat_ids.append(seat_id)
                     continue
 
                 if result == LED_OCCUPIED:
@@ -333,9 +333,10 @@ def activate_available_seat():
             remove_seat(seat_id, client)
             client.close()
 
-    if already_active_seat is not None:
-        return activation_result(LED_ALREADY_ACTIVE, already_active_seat)
-    return None
+    if not activated_seat_ids and not already_active_seat_ids:
+        return None
+
+    return activation_result(activated_seat_ids, already_active_seat_ids)
 
 
 def handle_nfc_message(message):
@@ -360,7 +361,7 @@ def handle_nfc_message(message):
         value = message.get(key, 1)
         print(f"NFC recebido: {key} = {value}")
 
-    activation = activate_available_seat()
+    activation = activate_available_seats()
     if activation is None:
         print("Nenhum assento livre conectado")
         return {
@@ -368,19 +369,17 @@ def handle_nfc_message(message):
             "received": message,
         }
 
-    seat_id = activation["seat_id"]
-    if activation["result"] == LED_ALREADY_ACTIVE:
-        return {
-            "status": LED_ALREADY_ACTIVE,
-            "received": message,
-            "seat_id": seat_id,
-            "led": 1,
-        }
+    activated_seat_ids = activation["activated_seat_ids"]
+    already_active_seat_ids = activation["already_active_seat_ids"]
+    seat_ids = activated_seat_ids + already_active_seat_ids
+    status = "ok" if activated_seat_ids else LED_ALREADY_ACTIVE
 
     return {
-        "status": "ok",
+        "status": status,
         "received": message,
-        "seat_id": seat_id,
+        # Keep the singular field for older NFC firmware that consumes it.
+        "seat_id": seat_ids[0],
+        "seat_ids": seat_ids,
         "led": 1,
     }
 

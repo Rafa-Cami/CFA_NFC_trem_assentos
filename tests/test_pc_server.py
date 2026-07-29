@@ -294,15 +294,15 @@ class PcServerTests(unittest.TestCase):
             esp_socket.close()
             handler.join(0.5)
 
-    def test_activation_skips_occupied_and_uses_next_available_seat(self):
+    def test_activation_skips_occupied_and_activates_all_available_seats(self):
         occupied = ScriptedSeat([pc_server.STATUS_OCCUPIED], [])
         available = ScriptedSeat([pc_server.STATUS_AVAILABLE], [True])
         with pc_server.seats_lock:
             pc_server.seats.update({"A": occupied, "B": available})
 
         self.assertEqual(
-            pc_server.activate_available_seat(),
-            pc_server.activation_result(pc_server.LED_ACTIVATED, "B"),
+            pc_server.activate_available_seats(),
+            pc_server.activation_result(["B"], []),
         )
         self.assertEqual(
             occupied.requests,
@@ -320,8 +320,27 @@ class PcServerTests(unittest.TestCase):
             pc_server.seats.update({"A": rejected, "B": accepted})
 
         self.assertEqual(
-            pc_server.activate_available_seat(),
-            pc_server.activation_result(pc_server.LED_ACTIVATED, "B"),
+            pc_server.activate_available_seats(),
+            pc_server.activation_result(["B"], []),
+        )
+
+    def test_activation_turns_on_every_available_seat(self):
+        alberto = ScriptedSeat([pc_server.STATUS_AVAILABLE], [True])
+        bete = ScriptedSeat([pc_server.STATUS_AVAILABLE], [True])
+        with pc_server.seats_lock:
+            pc_server.seats.update({"Alberto": alberto, "Bete": bete})
+
+        self.assertEqual(
+            pc_server.activate_available_seats(),
+            pc_server.activation_result(["Alberto", "Bete"], []),
+        )
+        self.assertEqual(
+            alberto.requests,
+            [("get_status", {}), ("set_led", {"value": 1})],
+        )
+        self.assertEqual(
+            bete.requests,
+            [("get_status", {}), ("set_led", {"value": 1})],
         )
 
     def test_active_led_is_not_reported_as_rejection_or_no_seat(self):
@@ -378,7 +397,7 @@ class PcServerTests(unittest.TestCase):
         with pc_server.seats_lock:
             pc_server.seats["A"] = stale
 
-        self.assertIsNone(pc_server.activate_available_seat())
+        self.assertIsNone(pc_server.activate_available_seats())
         self.assertTrue(stale.closed)
         self.assertNotIn("A", pc_server.seats)
 
@@ -390,7 +409,7 @@ class PcServerTests(unittest.TestCase):
         results = []
 
         def activate():
-            results.append(pc_server.activate_available_seat())
+            results.append(pc_server.activate_available_seats())
 
         threads = [threading.Thread(target=activate) for _ in range(2)]
         for thread in threads:
@@ -401,11 +420,8 @@ class PcServerTests(unittest.TestCase):
         self.assertCountEqual(
             results,
             [
-                pc_server.activation_result(pc_server.LED_ACTIVATED, "A"),
-                pc_server.activation_result(
-                    pc_server.LED_ALREADY_ACTIVE,
-                    "A",
-                ),
+                pc_server.activation_result(["A"], []),
+                pc_server.activation_result([], ["A"]),
             ],
         )
 
