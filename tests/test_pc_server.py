@@ -1,9 +1,11 @@
+import io
 import json
 import socket
 import sys
 import threading
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 
@@ -44,11 +46,19 @@ class ScriptedSeat:
             result = self.statuses.pop(0)
             if isinstance(result, Exception):
                 raise result
+            if isinstance(result, dict):
+                response = {"type": "seat_status"}
+                response.update(result)
+                return response
             return {"type": "seat_status", "status": result}
 
         result = self.led_results.pop(0)
         if isinstance(result, Exception):
             raise result
+        if isinstance(result, dict):
+            response = {"type": "set_led_result"}
+            response.update(result)
+            return response
         return {"type": "set_led_result", "accepted": result}
 
     def close(self):
@@ -66,14 +76,23 @@ class ReservableSeat:
             return {
                 "type": "seat_status",
                 "status": pc_server.STATUS_AVAILABLE,
+                "led_on": self.led_on,
+                "led_remaining_ms": 9000 if self.led_on else 0,
             }
 
         if not self.led_on:
             self.led_on = True
             accepted = True
+            result = pc_server.LED_ACTIVATED
         else:
             accepted = False
-        return {"type": "set_led_result", "accepted": accepted}
+            result = pc_server.LED_ALREADY_ACTIVE
+        return {
+            "type": "set_led_result",
+            "accepted": accepted,
+            "result": result,
+            "led_on": self.led_on,
+        }
 
     def close(self):
         self.closed = True
@@ -83,12 +102,16 @@ class PcServerTests(unittest.TestCase):
     def setUp(self):
         with pc_server.seats_lock:
             pc_server.seats.clear()
+        with pc_server.nfc_clients_lock:
+            pc_server.nfc_clients.clear()
         with pc_server.request_id_lock:
             pc_server.next_request_id = 1
 
     def tearDown(self):
         with pc_server.seats_lock:
             pc_server.seats.clear()
+        with pc_server.nfc_clients_lock:
+            pc_server.nfc_clients.clear()
 
     def test_request_is_correlated_by_request_id(self):
         sock = FakeSocket()
@@ -159,6 +182,44 @@ class PcServerTests(unittest.TestCase):
 
         self.assertTrue(old_socket.closed)
         self.assertIs(pc_server.seats["Bete"], new_client)
+
+    def test_nfc_registration_and_heartbeat(self):
+        server_socket, esp_socket = socket.socketpair()
+        handler = threading.Thread(
+            target=pc_server.handle_client,
+            args=(server_socket, ("nfc", 5001)),
+        )
+        handler.start()
+        esp_file = esp_socket.makefile("r")
+
+        try:
+            esp_socket.sendall(
+                b'{"type":"nfc_register","device_id":"nfc_reader",'
+                b'"reader_ready":true}\n'
+            )
+            register_ack = json.loads(esp_file.readline())
+            self.assertEqual(register_ack["type"], "nfc_register_ack")
+            self.assertEqual(register_ack["device_id"], "nfc_reader")
+
+            with pc_server.nfc_clients_lock:
+                self.assertIn("nfc_reader", pc_server.nfc_clients)
+                client = pc_server.nfc_clients["nfc_reader"]
+                self.assertTrue(client.nfc_reader_ready)
+
+            esp_socket.sendall(
+                b'{"type":"ping","ping_id":7,"reader_ready":false}\n'
+            )
+            pong = json.loads(esp_file.readline())
+            self.assertEqual(pong, {"type": "pong", "ping_id": 7})
+            self.assertFalse(client.nfc_reader_ready)
+        finally:
+            esp_file.close()
+            esp_socket.close()
+            handler.join(0.5)
+
+        self.assertFalse(handler.is_alive())
+        with pc_server.nfc_clients_lock:
+            self.assertNotIn("nfc_reader", pc_server.nfc_clients)
 
     def test_persistent_seat_connection_is_queried_only_after_nfc(self):
         server_socket, esp_socket = socket.socketpair()
@@ -239,7 +300,10 @@ class PcServerTests(unittest.TestCase):
         with pc_server.seats_lock:
             pc_server.seats.update({"A": occupied, "B": available})
 
-        self.assertEqual(pc_server.activate_available_seat(), "B")
+        self.assertEqual(
+            pc_server.activate_available_seat(),
+            pc_server.activation_result(pc_server.LED_ACTIVATED, "B"),
+        )
         self.assertEqual(
             occupied.requests,
             [("get_status", {})],
@@ -255,7 +319,56 @@ class PcServerTests(unittest.TestCase):
         with pc_server.seats_lock:
             pc_server.seats.update({"A": rejected, "B": accepted})
 
-        self.assertEqual(pc_server.activate_available_seat(), "B")
+        self.assertEqual(
+            pc_server.activate_available_seat(),
+            pc_server.activation_result(pc_server.LED_ACTIVATED, "B"),
+        )
+
+    def test_active_led_is_not_reported_as_rejection_or_no_seat(self):
+        active = ScriptedSeat(
+            [
+                {
+                    "status": pc_server.STATUS_OCCUPIED,
+                    "led_on": True,
+                    "led_remaining_ms": 6500,
+                }
+            ],
+            [],
+        )
+        with pc_server.seats_lock:
+            pc_server.seats["Bete"] = active
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            response = pc_server.handle_nfc_message({"nfc_1": 1})
+
+        self.assertEqual(response["status"], pc_server.LED_ALREADY_ACTIVE)
+        self.assertEqual(response["seat_id"], "Bete")
+        self.assertIn("LED já ativo no assento Bete", output.getvalue())
+        self.assertNotIn("Nenhum assento livre", output.getvalue())
+        self.assertEqual(active.requests, [("get_status", {})])
+
+    def test_timeout_event_logs_confirmed_led_shutdown(self):
+        client = pc_server.ClientConnection(FakeSocket(), ("seat", 5000))
+        client.seat_id = "Bete"
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            handled = pc_server.handle_seat_event(
+                client,
+                {
+                    "type": "seat_led_state",
+                    "seat_id": "Bete",
+                    "led_on": False,
+                    "reason": "timeout",
+                },
+            )
+
+        self.assertTrue(handled)
+        self.assertIn(
+            "LED desligado automaticamente no assento Bete após 10 s",
+            output.getvalue(),
+        )
 
     def test_timeout_removes_stale_seat(self):
         stale = ScriptedSeat(
@@ -285,7 +398,16 @@ class PcServerTests(unittest.TestCase):
         for thread in threads:
             thread.join(1)
 
-        self.assertCountEqual(results, ["A", None])
+        self.assertCountEqual(
+            results,
+            [
+                pc_server.activation_result(pc_server.LED_ACTIVATED, "A"),
+                pc_server.activation_result(
+                    pc_server.LED_ALREADY_ACTIVE,
+                    "A",
+                ),
+            ],
+        )
 
     def test_invalid_message_does_not_query_seats(self):
         seat = ScriptedSeat([pc_server.STATUS_AVAILABLE], [True])

@@ -62,14 +62,19 @@ _PN532TOHOST = const(0xD5)
 
 _COMMAND_GETFIRMWAREVERSION = const(0x02)
 _COMMAND_SAMCONFIGURATION = const(0x14)
+_COMMAND_RFCONFIGURATION = const(0x32)
 _COMMAND_INLISTPASSIVETARGET = const(0x4A)
 
 _MIFARE_ISO14443A = const(0x00)
 _I2C_READY = const(0x01)
 
 _ACK = b"\x00\x00\xFF\x00\xFF\x00"
-_READ_WARNING = const(-1)
-_ERROR_BEEP_INTERVAL_MS = 1500
+PN532_ACK_TIMEOUT_MS = 30
+PN532_SEARCH_TIMEOUT_MS = 180
+POLL_INTERVAL_MS = 50
+CONSECUTIVE_READER_ERRORS = 5
+CARD_ABSENCE_POLLS = 2
+HEARTBEAT_INTERVAL_MS = 2000
 
 
 class BusyError(Exception):
@@ -80,18 +85,18 @@ class PN532FrameWarning(Exception):
     pass
 
 
+class PN532ResponseTimeout(RuntimeError):
+    pass
+
+
+class PN532AckTimeout(PN532ResponseTimeout):
+    pass
+
+
 class PN532:
     def __init__(self, *, debug=False):
         self.debug = debug
-
-        try:
-            self._wakeup()
-            self.get_firmware_version()
-            return
-        except (BusyError, RuntimeError):
-            pass
-
-        self.get_firmware_version()
+        self._wakeup()
 
     def _read_data(self, count):
         raise NotImplementedError
@@ -151,7 +156,14 @@ class PN532:
 
         return response[offset + 2 : offset + 2 + frame_len]
 
-    def call_function(self, command, response_length=0, params=None, timeout=1):
+    def call_function(
+        self,
+        command,
+        response_length=0,
+        params=None,
+        ack_timeout_ms=PN532_ACK_TIMEOUT_MS,
+        response_timeout_ms=500,
+    ):
         if params is None:
             params = []
 
@@ -161,29 +173,22 @@ class PN532:
         for index, value in enumerate(params):
             data[2 + index] = value
 
-        try:
-            self._write_frame(data)
-        except OSError:
-            self._wakeup()
-            if self.debug:
-                print("call_function OSError")
-            return None
-
-        if not self._wait_ready(timeout):
-            if self.debug:
-                print("call_function timeout waiting for ACK")
-            return None
+        self._write_frame(data)
+        if not self._wait_ready(ack_timeout_ms):
+            raise PN532AckTimeout("timeout waiting for ACK")
 
         if self._read_data(len(_ACK)) != _ACK:
             raise RuntimeError("Did not receive expected ACK from PN532")
 
-        if not self._wait_ready(timeout):
-            if self.debug:
-                print("call_function timeout waiting for response")
-            return None
+        if not self._wait_ready(response_timeout_ms):
+            raise PN532ResponseTimeout("timeout waiting for response")
 
         response = self._read_frame(response_length + 2)
-        if response[0] != _PN532TOHOST or response[1] != command + 1:
+        if (
+            len(response) < 2
+            or response[0] != _PN532TOHOST
+            or response[1] != command + 1
+        ):
             raise RuntimeError("Received unexpected command response")
 
         return response[2:]
@@ -192,40 +197,54 @@ class PN532:
         if self.debug:
             print("Get firmware version")
 
-        response = self.call_function(_COMMAND_GETFIRMWAREVERSION, 4, timeout=0.5)
-        if response is None:
-            raise RuntimeError("Failed to detect the PN532")
+        response = self.call_function(
+            _COMMAND_GETFIRMWAREVERSION,
+            4,
+            response_timeout_ms=500,
+        )
 
         if self.debug:
             print("Get firmware version response:", tuple(response))
         return tuple(response)
 
     def SAM_configuration(self):
-        self.call_function(_COMMAND_SAMCONFIGURATION, params=[0x01, 0x14, 0x01])
+        self.call_function(
+            _COMMAND_SAMCONFIGURATION,
+            params=[0x01, 0x14, 0x01],
+            response_timeout_ms=500,
+        )
+        # Use one passive activation attempt per poll. This prevents an old
+        # search response from being consumed by the following command.
+        self.call_function(
+            _COMMAND_RFCONFIGURATION,
+            params=[0x05, 0xFF, 0x01, 0x00],
+            response_timeout_ms=500,
+        )
 
-    def read_passive_target(self, card_baud=_MIFARE_ISO14443A, timeout=1):
+    def read_passive_target(self, card_baud=_MIFARE_ISO14443A):
         try:
             response = self.call_function(
                 _COMMAND_INLISTPASSIVETARGET,
                 params=[0x01, card_baud],
                 response_length=19,
-                timeout=timeout,
+                response_timeout_ms=PN532_SEARCH_TIMEOUT_MS,
             )
-        except BusyError:
-            return None
-        except PN532FrameWarning as warning:
-            print("Warning:", warning)
-            return _READ_WARNING
-
-        if response is None:
+        except PN532ResponseTimeout as error:
+            if isinstance(error, PN532AckTimeout):
+                raise
             return None
 
-        if response[0] != 0x01:
-            raise RuntimeError("More than one card detected")
-        if response[5] > 7:
+        if not response or response[0] == 0:
+            return None
+
+        if response[0] != 1 or len(response) < 6:
+            raise RuntimeError("Invalid PN532 target response")
+
+        uid_length = response[5]
+        if uid_length > 7 or len(response) < 6 + uid_length:
             raise RuntimeError("Found card with unexpectedly long UID")
 
-        return response[6 : 6 + response[5]]
+        return response[6 : 6 + uid_length]
 
 
 class PN532_I2C(PN532):
@@ -236,33 +255,37 @@ class PN532_I2C(PN532):
     def _wakeup(self):
         time.sleep(0.5)
 
-    def _wait_ready(self, timeout=1):
+    def _wait_ready(self, timeout_ms):
         status = bytearray(1)
-        started_at = time.time_ns() / 1000000000
+        started_at = time.ticks_ms()
 
-        while (time.time_ns() / 1000000000) - started_at < timeout:
+        while time.ticks_diff(time.ticks_ms(), started_at) < timeout_ms:
             try:
                 self._i2c.readfrom_into(PN532_I2C_ADDRESS, status)
             except OSError:
-                self._wakeup()
                 continue
 
             if status[0] == _I2C_READY:
                 return True
 
-            time.sleep(0.05)
+            time.sleep_ms(5)
 
         return False
 
     def _read_data(self, count):
-        frame = bytearray(count + 1)
+        # The PN532 I2C protocol requires a status-byte read before the frame
+        # read. Keeping these as separate I2C transactions is important: a
+        # single combined read can work once and leave subsequent responses
+        # out of sync.
         status = bytearray(1)
-
         self._i2c.readfrom_into(PN532_I2C_ADDRESS, status)
         if status[0] != _I2C_READY:
-            raise BusyError
+            raise BusyError("PN532 not ready")
 
+        frame = bytearray(count + 1)
         self._i2c.readfrom_into(PN532_I2C_ADDRESS, frame)
+        if frame[0] != _I2C_READY:
+            raise BusyError("PN532 not ready")
         return frame[1:]
 
     def _write_data(self, framebytes):
@@ -335,17 +358,57 @@ def connect_wifi():
     return wifi
 
 
-def connect_pc():
+def connect_pc(reader_ready):
     print("Connecting to PC {}:{}...".format(HOST, PORT))
-    connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    connection.connect((HOST, PORT))
-    print("Connected to PC")
-    return connection, connection.makefile("r")
+    connection = None
+    response_file = None
+    try:
+        connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        connection.settimeout(5)
+        try:
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        except (AttributeError, OSError):
+            pass
+        connection.connect((HOST, PORT))
+        response_file = connection.makefile("r")
+        connection.send(
+            (
+                json.dumps(
+                    {
+                        "type": "nfc_register",
+                        "device_id": "nfc_reader",
+                        "reader_ready": reader_ready,
+                    }
+                )
+                + "\n"
+            ).encode()
+        )
+        line = response_file.readline()
+        if not line:
+            raise RuntimeError("PC disconnected during NFC registration")
+        response = json.loads(line)
+        if response.get("type") != "nfc_register_ack":
+            raise RuntimeError("Invalid NFC registration response")
+        print("Connected to PC as nfc_reader")
+        return connection, response_file
+    except Exception:
+        close_connection(connection, response_file)
+        raise
 
 
-def send_nfc_message(connection, response_file, uid_text, allowed_uids):
+def send_nfc_message(
+    connection,
+    response_file,
+    uid_text,
+    allowed_uids,
+    event_id,
+):
     index = allowed_uids.index(uid_text)
-    message = {"nfc_{}".format(index + 1): 1}
+    message = {
+        "type": "nfc_presented",
+        "event_id": event_id,
+        "card_index": index + 1,
+    }
     connection.send((json.dumps(message) + "\n").encode())
     print("Sent:", message)
 
@@ -354,8 +417,59 @@ def send_nfc_message(connection, response_file, uid_text, allowed_uids):
         raise RuntimeError("PC disconnected after NFC message")
 
     response = json.loads(response)
+    if (
+        response.get("type") != "nfc_result"
+        or response.get("event_id") != event_id
+    ):
+        raise RuntimeError("Invalid NFC result response")
     print("PC response:", response)
     return response
+
+
+def send_heartbeat(
+    connection,
+    response_file,
+    ping_id,
+    reader_ready,
+):
+    message = {
+        "type": "ping",
+        "ping_id": ping_id,
+        "reader_ready": reader_ready,
+    }
+    connection.send((json.dumps(message) + "\n").encode())
+    response = response_file.readline()
+    if not response:
+        raise RuntimeError("PC disconnected during heartbeat")
+    response = json.loads(response)
+    if (
+        response.get("type") != "pong"
+        or response.get("ping_id") != ping_id
+    ):
+        raise RuntimeError("Invalid heartbeat response")
+
+
+def initialize_reader():
+    i2c = create_i2c()
+    print("Initializing PN532 directly at 0x24")
+    pn532 = PN532_I2C(i2c, debug=False)
+    ic, ver, rev, support = pn532.get_firmware_version()
+    print("Found PN532 firmware version: {}.{}".format(ver, rev))
+    pn532.SAM_configuration()
+    return pn532
+
+
+def close_connection(connection, response_file):
+    if response_file is not None:
+        try:
+            response_file.close()
+        except Exception:
+            pass
+    if connection is not None:
+        try:
+            connection.close()
+        except Exception:
+            pass
 
 
 def main():
@@ -364,93 +478,150 @@ def main():
     print("Buzzer: GPIO{}".format(BUZZER_PIN))
 
     allowed_uids = [uid.lower() for uid in NFC_UUIDS]
-    connect_wifi()
+    wifi = connect_wifi()
 
-    i2c = create_i2c()
-    devices = i2c.scan()
-    print("I2C devices:", [hex(device) for device in devices])
-
-    if PN532_I2C_ADDRESS not in devices:
-        print("PN532 not found at 0x24. Check SDA/SCL, VCC, GND and I2C mode.")
-        for _ in range(3):
-            beep(70, 500)
-            time.sleep_ms(80)
-        return
-
-    pn532 = PN532_I2C(i2c, debug=False)
-    ic, ver, rev, support = pn532.get_firmware_version()
-    print("Found PN532 firmware version: {}.{}".format(ver, rev))
-
-    pn532.SAM_configuration()
-    success_beep()
+    pn532 = None
+    try:
+        pn532 = initialize_reader()
+        success_beep()
+    except Exception as error:
+        print("PN532 initialization deferred:", error)
 
     connection = None
     response_file = None
     last_uid = None
     last_sent_at = 0
-    last_error_beep = 0
+    absent_polls = CARD_ABSENCE_POLLS
+    consecutive_reader_errors = 0
+    last_heartbeat_at = 0
+    ping_id = 0
+    event_id = 0
 
     print("Waiting for NFC card...")
 
     while True:
-        try:
-            if connection is None:
-                connection, response_file = connect_pc()
-
-            uid = pn532.read_passive_target(timeout=0.2)
-
-            if uid == _READ_WARNING:
-                now = time.ticks_ms()
-                if time.ticks_diff(now, last_error_beep) >= _ERROR_BEEP_INTERVAL_MS:
-                    error_beep()
-                    last_error_beep = now
-                time.sleep_ms(100)
-                continue
-
-            if uid is None:
-                last_uid = None
-                time.sleep_ms(100)
-                continue
-
-            uid_text = format_uid(uid)
-
-            if uid_text != last_uid:
-                print("Found card UID:", uid_text)
-                last_uid = uid_text
-
-            now = time.ticks_ms()
-            can_send = time.ticks_diff(now, last_sent_at) >= READ_COOLDOWN_MS
-
-            if uid_text in allowed_uids and can_send:
-                response = send_nfc_message(
-                    connection, response_file, uid_text, allowed_uids
-                )
-                if response.get("status") == "ok":
-                    success_beep()
-                else:
-                    print("No available seat:", response)
-                    error_beep()
-                last_sent_at = now
-            elif uid_text not in allowed_uids and can_send:
-                print("UID not authorized:", uid_text)
-                invalid_card_beep()
-                last_sent_at = now
-
-            time.sleep_ms(250)
-
-        except Exception as error:
-            print("Connection/read error:", error)
-            error_beep()
-
+        if connection is None:
             try:
-                if connection is not None:
-                    connection.close()
-            except Exception:
-                pass
+                if not wifi.isconnected():
+                    wifi = connect_wifi()
+                connection, response_file = connect_pc(pn532 is not None)
+                last_heartbeat_at = time.ticks_ms()
+            except Exception as error:
+                print("PC connection error:", error)
+                close_connection(connection, response_file)
+                connection = None
+                response_file = None
+                time.sleep(5)
+                continue
 
-            connection = None
-            response_file = None
-            time.sleep(5)
+        now = time.ticks_ms()
+        if (
+            time.ticks_diff(now, last_heartbeat_at)
+            >= HEARTBEAT_INTERVAL_MS
+        ):
+            try:
+                ping_id += 1
+                send_heartbeat(
+                    connection,
+                    response_file,
+                    ping_id,
+                    pn532 is not None,
+                )
+                last_heartbeat_at = now
+            except Exception as error:
+                print("PC heartbeat error:", error)
+                close_connection(connection, response_file)
+                connection = None
+                response_file = None
+                time.sleep(1)
+                continue
+
+        if pn532 is None:
+            try:
+                pn532 = initialize_reader()
+                consecutive_reader_errors = 0
+                last_uid = None
+                absent_polls = CARD_ABSENCE_POLLS
+                print("PN532 recovered")
+            except Exception as error:
+                print("PN532 still unavailable:", error)
+                time.sleep(2)
+                continue
+
+        try:
+            uid = pn532.read_passive_target()
+            consecutive_reader_errors = 0
+        except Exception as error:
+            consecutive_reader_errors += 1
+            if consecutive_reader_errors == 1:
+                print("PN532 read error:", error)
+
+            if consecutive_reader_errors >= CONSECUTIVE_READER_ERRORS:
+                print("Recovering PN532 after repeated read errors")
+
+                try:
+                    pn532 = initialize_reader()
+                    consecutive_reader_errors = 0
+                    last_uid = None
+                    absent_polls = CARD_ABSENCE_POLLS
+                    print("PN532 recovered")
+                except Exception as recovery_error:
+                    print("PN532 recovery error:", recovery_error)
+                    pn532 = None
+                    time.sleep(1)
+
+            time.sleep_ms(POLL_INTERVAL_MS)
+            continue
+
+        if uid is None:
+            absent_polls += 1
+            if absent_polls >= CARD_ABSENCE_POLLS:
+                last_uid = None
+            time.sleep_ms(POLL_INTERVAL_MS)
+            continue
+
+        absent_polls = 0
+        uid_text = format_uid(uid)
+        if uid_text == last_uid:
+            time.sleep_ms(POLL_INTERVAL_MS)
+            continue
+
+        print("Found card UID:", uid_text)
+        last_uid = uid_text
+        now = time.ticks_ms()
+        can_send = time.ticks_diff(now, last_sent_at) >= READ_COOLDOWN_MS
+
+        if uid_text in allowed_uids and can_send:
+            try:
+                event_id += 1
+                response = send_nfc_message(
+                    connection,
+                    response_file,
+                    uid_text,
+                    allowed_uids,
+                    event_id,
+                )
+            except Exception as error:
+                print("PC communication error:", error)
+                error_beep()
+                close_connection(connection, response_file)
+                connection = None
+                response_file = None
+                time.sleep(1)
+                continue
+
+            if response.get("status") in ("ok", "already_active"):
+                success_beep()
+            else:
+                print("No available seat:", response)
+                error_beep()
+            last_sent_at = now
+        elif uid_text not in allowed_uids and can_send:
+            print("UID not authorized:", uid_text)
+            invalid_card_beep()
+            last_sent_at = now
+
+        time.sleep_ms(POLL_INTERVAL_MS)
 
 
 if __name__ == "__main__":

@@ -8,9 +8,14 @@ PORT = 5000
 SEAT_REQUEST_TIMEOUT_SECONDS = 1.0
 STATUS_OCCUPIED = "ocupado"
 STATUS_AVAILABLE = "disponível"
+LED_ACTIVATED = "activated"
+LED_ALREADY_ACTIVE = "already_active"
+LED_OCCUPIED = "occupied"
 
 seats = {}
 seats_lock = threading.Lock()
+nfc_clients = {}
+nfc_clients_lock = threading.Lock()
 request_id_lock = threading.Lock()
 next_request_id = 1
 
@@ -45,6 +50,8 @@ class ClientConnection:
         self.connection = connection
         self.address = address
         self.seat_id = None
+        self.device_id = None
+        self.nfc_reader_ready = None
         self.send_lock = threading.Lock()
         self.transaction_lock = threading.Lock()
         self.pending_lock = threading.Lock()
@@ -175,12 +182,85 @@ def remove_seat(seat_id, client):
             print(f"Assento desconectado: {seat_id}")
 
 
+def register_nfc(client, message):
+    device_id = message.get("device_id")
+    if not isinstance(device_id, str) or not device_id:
+        raise ValueError("nfc_register sem device_id valido")
+
+    old_client = None
+    client.device_id = device_id
+    with nfc_clients_lock:
+        previous = nfc_clients.get(device_id)
+        if previous is not None and previous is not client:
+            old_client = previous
+        nfc_clients[device_id] = client
+
+    if old_client is not None:
+        old_client.close()
+
+    print(f"Leitor NFC registrado: {device_id} ({client.address})")
+    update_nfc_health(client, message)
+    return device_id
+
+
+def update_nfc_health(client, message):
+    reader_ready = message.get("reader_ready")
+    if not isinstance(reader_ready, bool):
+        return
+    if client.nfc_reader_ready == reader_ready:
+        return
+
+    client.nfc_reader_ready = reader_ready
+    state = "pronto" if reader_ready else "indisponivel"
+    print(f"PN532 {state}: {client.device_id}")
+
+
+def remove_nfc(device_id, client):
+    if device_id is None:
+        return
+
+    with nfc_clients_lock:
+        current = nfc_clients.get(device_id)
+        if current is client:
+            del nfc_clients[device_id]
+            print(f"Leitor NFC desconectado: {device_id}")
+
+
 def get_registered_seats():
     with seats_lock:
         return [(seat_id, seats[seat_id]) for seat_id in sorted(seats)]
 
 
+def activation_result(result, seat_id):
+    return {
+        "result": result,
+        "seat_id": seat_id,
+    }
+
+
+def handle_seat_event(client, message):
+    if message.get("type") != "seat_led_state":
+        return False
+    if message.get("seat_id") != client.seat_id:
+        print(f"Evento de LED com seat_id invalido: {message}")
+        return True
+
+    led_on = message.get("led_on")
+    reason = message.get("reason")
+    if led_on is False and reason == "timeout":
+        print(
+            f"LED desligado automaticamente no assento "
+            f"{client.seat_id} após 10 s"
+        )
+    else:
+        state = "ativo" if led_on is True else "apagado"
+        print(f"LED {state} no assento {client.seat_id}: {reason}")
+    return True
+
+
 def activate_available_seat():
+    already_active_seat = None
+
     for seat_id, client in get_registered_seats():
         try:
             with client.transaction_lock:
@@ -189,6 +269,23 @@ def activate_available_seat():
                     "seat_status",
                 )
                 status = status_response.get("status")
+                led_on = status_response.get("led_on") is True
+
+                if led_on:
+                    remaining_ms = status_response.get("led_remaining_ms")
+                    if isinstance(remaining_ms, int):
+                        print(
+                            f"LED já ativo no assento {seat_id}; "
+                            f"temporizador mantido ({remaining_ms} ms restantes)"
+                        )
+                    else:
+                        print(
+                            f"LED já ativo no assento {seat_id}; "
+                            "temporizador mantido"
+                        )
+                    if already_active_seat is None:
+                        already_active_seat = seat_id
+                    continue
 
                 if status == STATUS_OCCUPIED:
                     print(f"Assento {seat_id}: ocupado")
@@ -203,21 +300,56 @@ def activate_available_seat():
                     "set_led_result",
                     value=1,
                 )
-                if led_response.get("accepted") is True:
-                    print(f"LED ativado no assento {seat_id}")
-                    return seat_id
+                result = led_response.get("result")
+                if (
+                    led_response.get("accepted") is True
+                    and result in (None, LED_ACTIVATED)
+                ):
+                    print(
+                        f"LED ativado no assento {seat_id}; "
+                        "desligamento em 10 s"
+                    )
+                    return activation_result(LED_ACTIVATED, seat_id)
 
-                print(f"Assento {seat_id} recusou a ativacao do LED")
+                if result == LED_ALREADY_ACTIVE:
+                    print(
+                        f"LED já ativo no assento {seat_id}; "
+                        "temporizador mantido"
+                    )
+                    if already_active_seat is None:
+                        already_active_seat = seat_id
+                    continue
+
+                if result == LED_OCCUPIED:
+                    print(f"Assento {seat_id}: ocupado")
+                    continue
+
+                print(
+                    f"Assento {seat_id} recusou a ativacao do LED: "
+                    f"{result or 'motivo nao informado'}"
+                )
         except (OSError, SeatRequestError) as error:
             print(f"Falha ao consultar {seat_id}: {error}")
             remove_seat(seat_id, client)
             client.close()
 
+    if already_active_seat is not None:
+        return activation_result(LED_ALREADY_ACTIVE, already_active_seat)
     return None
 
 
 def handle_nfc_message(message):
-    nfc_keys = [key for key in message if key.startswith("nfc_")]
+    if message.get("type") == "nfc_presented":
+        card_index = message.get("card_index")
+        if not isinstance(card_index, int) or card_index < 1:
+            return {
+                "status": "invalid_message",
+                "received": message,
+            }
+        nfc_keys = ["nfc_{}".format(card_index)]
+    else:
+        nfc_keys = [key for key in message if key.startswith("nfc_")]
+
     if not nfc_keys:
         return {
             "status": "invalid_message",
@@ -225,14 +357,24 @@ def handle_nfc_message(message):
         }
 
     for key in nfc_keys:
-        print(f"NFC recebido: {key} = {message[key]}")
+        value = message.get(key, 1)
+        print(f"NFC recebido: {key} = {value}")
 
-    seat_id = activate_available_seat()
-    if seat_id is None:
+    activation = activate_available_seat()
+    if activation is None:
         print("Nenhum assento livre conectado")
         return {
             "status": "no_available_seat",
             "received": message,
+        }
+
+    seat_id = activation["seat_id"]
+    if activation["result"] == LED_ALREADY_ACTIVE:
+        return {
+            "status": LED_ALREADY_ACTIVE,
+            "received": message,
+            "seat_id": seat_id,
+            "led": 1,
         }
 
     return {
@@ -259,6 +401,7 @@ def handle_client(connection, address):
     response_file = connection.makefile("r", encoding="utf-8")
     role = None
     seat_id = None
+    device_id = None
     print(f"Dispositivo conectado: {address}")
 
     try:
@@ -272,19 +415,46 @@ def handle_client(connection, address):
                     role = "seat"
                     seat_id = register_seat(client, message)
                     continue
+                if message.get("type") == "nfc_register":
+                    role = "nfc"
+                    device_id = register_nfc(client, message)
+                    client.send(
+                        {
+                            "type": "nfc_register_ack",
+                            "device_id": device_id,
+                        }
+                    )
+                    continue
                 role = "nfc"
 
             if role == "seat":
+                if handle_seat_event(client, message):
+                    continue
                 client.deliver_response(message)
                 continue
 
+            if message.get("type") == "ping":
+                if role == "nfc":
+                    update_nfc_health(client, message)
+                client.send(
+                    {
+                        "type": "pong",
+                        "ping_id": message.get("ping_id"),
+                    }
+                )
+                continue
+
             response = handle_nfc_message(message)
+            if message.get("type") == "nfc_presented":
+                response["type"] = "nfc_result"
+                response["event_id"] = message.get("event_id")
             client.send(response)
 
     except (OSError, ValueError) as error:
         print(f"Erro com {address}: {error}")
     finally:
         remove_seat(seat_id, client)
+        remove_nfc(device_id, client)
         try:
             response_file.close()
         except OSError:

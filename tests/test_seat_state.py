@@ -6,7 +6,16 @@ from pathlib import Path
 SEAT_SOURCE = Path(__file__).resolve().parents[1] / "ESP_Assentos" / "src"
 sys.path.insert(0, str(SEAT_SOURCE))
 
-from seat_state import STATUS_AVAILABLE, STATUS_OCCUPIED, SeatState
+from seat_state import (
+    LED_ACTIVATED,
+    LED_ALREADY_ACTIVE,
+    LED_DEACTIVATED,
+    LED_INVALID_VALUE,
+    LED_OCCUPIED,
+    STATUS_AVAILABLE,
+    STATUS_OCCUPIED,
+    SeatState,
+)
 
 
 class SeatStateTests(unittest.TestCase):
@@ -45,21 +54,41 @@ class SeatStateTests(unittest.TestCase):
         self.assertEqual(state.status, STATUS_OCCUPIED)
         self.assertEqual(state.occupied_readings, 9)
 
-    def test_led_is_atomic_and_turns_off_when_seat_becomes_occupied(self):
+    def test_led_stays_on_when_seat_becomes_occupied(self):
         state = SeatState(window_size=10)
 
-        self.assertFalse(state.set_led(1))
+        self.assertEqual(state.set_led(1, 10000), LED_OCCUPIED)
         for _ in range(10):
             state.add_reading(False, False)
 
-        self.assertTrue(state.set_led(1))
+        self.assertEqual(state.set_led(1, 10000), LED_ACTIVATED)
         self.assertTrue(state.led_on)
-        self.assertFalse(state.set_led(1))
+        self.assertEqual(state.set_led(1, 20000), LED_ALREADY_ACTIVE)
+        self.assertEqual(state.led_deadline_ms, 10000)
 
         state.add_reading(False, True)
+        self.assertTrue(state.led_on)
+        self.assertEqual(state.set_led(1, 20000), LED_ALREADY_ACTIVE)
+        self.assertEqual(state.set_led(2), LED_INVALID_VALUE)
+        self.assertEqual(state.set_led(0), LED_DEACTIVATED)
         self.assertFalse(state.led_on)
-        self.assertFalse(state.set_led(1))
-        self.assertTrue(state.set_led(0))
+
+    def test_led_expires_only_at_original_deadline(self):
+        state = SeatState(window_size=1)
+        state.add_reading(False, False)
+        ticks_diff = lambda left, right: left - right
+
+        self.assertEqual(state.set_led(1, 10000), LED_ACTIVATED)
+        self.assertEqual(state.led_remaining_ms(2500, ticks_diff), 7500)
+        self.assertEqual(state.set_led(1, 15000), LED_ALREADY_ACTIVE)
+        self.assertEqual(state.led_deadline_ms, 10000)
+
+        self.assertFalse(state.expire_led(9999, ticks_diff))
+        self.assertTrue(state.led_on)
+        self.assertTrue(state.expire_led(10000, ticks_diff))
+        self.assertFalse(state.led_on)
+        self.assertEqual(state.led_remaining_ms(10001, ticks_diff), 0)
+        self.assertFalse(state.expire_led(20000, ticks_diff))
 
 
 if __name__ == "__main__":

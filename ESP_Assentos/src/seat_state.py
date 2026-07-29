@@ -1,6 +1,12 @@
 STATUS_OCCUPIED = "ocupado"
 STATUS_AVAILABLE = "disponível"
 
+LED_ACTIVATED = "activated"
+LED_ALREADY_ACTIVE = "already_active"
+LED_OCCUPIED = "occupied"
+LED_INVALID_VALUE = "invalid_value"
+LED_DEACTIVATED = "deactivated"
+
 
 class SeatState:
     def __init__(self, window_size=10):
@@ -14,6 +20,7 @@ class SeatState:
         self.sample_count = 0
         self.occupied_readings = 0
         self.led_on = False
+        self.led_deadline_ms = None
 
     @property
     def status(self):
@@ -45,18 +52,38 @@ class SeatState:
         self.occupied_readings += int(sensor_2_occupied)
         self.next_index = (self.next_index + 1) % self.window_size
 
-        if self.status == STATUS_OCCUPIED:
-            self.led_on = False
-
         return self.status
 
-    def set_led(self, value):
+    def set_led(self, value, deadline_ms=None):
         if value == 0:
             self.led_on = False
-            return True
+            self.led_deadline_ms = None
+            return LED_DEACTIVATED
 
-        if value != 1 or not self.is_available or self.led_on:
-            return False
+        if value != 1:
+            return LED_INVALID_VALUE
+
+        if self.led_on:
+            return LED_ALREADY_ACTIVE
+
+        if not self.is_available:
+            return LED_OCCUPIED
 
         self.led_on = True
+        self.led_deadline_ms = deadline_ms
+        return LED_ACTIVATED
+
+    def led_remaining_ms(self, now_ms, ticks_diff):
+        if not self.led_on or self.led_deadline_ms is None:
+            return 0
+        return max(0, ticks_diff(self.led_deadline_ms, now_ms))
+
+    def expire_led(self, now_ms, ticks_diff):
+        if not self.led_on or self.led_deadline_ms is None:
+            return False
+        if ticks_diff(now_ms, self.led_deadline_ms) < 0:
+            return False
+
+        self.led_on = False
+        self.led_deadline_ms = None
         return True
