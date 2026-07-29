@@ -1,179 +1,343 @@
 <p align="center">
-  <img src="./docs/priorizahlogo.png" width="100" /><br/>
-  <b>Priorizah: Sistema de sensores para assentos preferenciais</b><br/>
-  <text>🚈 Relatório do projeto</text>
+  <img src="./docs/priorizahlogo.png" width="100" alt="Logo do Priorizah" /><br/>
+  <b>Priorizah: sistema de sensores para assentos preferenciais</b><br/>
+  <span>🚈 Projeto de NFC, sensores de ocupação e sinalização visual</span>
 </p>
 
-<br/>
+## 📍 Visão geral
 
-## 📍Introdução
+O Priorizah é um projeto desenvolvido na disciplina de
+[CFA](https://github.com/FNakano/CFA) para sinalizar assentos preferenciais
+disponíveis quando um cartão ou chaveiro NFC autorizado é apresentado.
 
-O projeto de cartões de identificação, desenvolvido na disciplina de [CFA](https://github.com/FNakano/CFA), tem como objetivo desenvolver um projeto utilizando a tecnologia de NFC para realizar avisos sonoros e alertar os passageiros do vagão. Para ver outros projetos relacionados que utilizam NFC, utilizamos como inspiração o projeto [CardForRPG](https://github.com/Felipe256/CardForRPG) e o projeto [SMAC - Sistema de Monitoramento para Assentos de Cadeira de Roda](https://github.com/Anemaygi/SMAC/tree/master/projeto) que apresenta uma possibilidade de implementação para os sensores de toque detectarem presença em um assento.
+O MVP utiliza três ESP32-C3:
 
-### 🗺️ Aplicação Real
+- um ESP32 com leitor PN532 e buzzer para identificar o cartão;
+- dois ESP32 de assento, cada um com dois sensores capacitivos e um LED;
+- um computador que executa o servidor TCP e coordena os dispositivos.
 
-A iniciativa foi inspirada no sistema de sensores utilizado no metrô da Coreia do Sul e seu aplicativo [pinklight](https://play.google.com/store/apps/details?id=kr.doweb.pinklight&hl=pt_BR), para criar uma solução baseada em IoT que incentive os passageiros a dar lugar à mulheres grávidas no assento preferencial. Segundo o [estudo de caso](https://publicadministration.un.org/unpsa/en/Home/Case-Details-Public?PreScreeningGUID=399fae3c-5002-4a93-af5e-88691160b86c&ReadOnly=Yes), "Recentemente, como muitos passageiros ficam absortos em seus smartphones enquanto viajam de ônibus ou metrô, é possível que raramente notem uma gestante por perto. Partindo do princípio de que muitos dos passageiros que não estão grávidos, mas ocupam assentos preferenciais, estariam de fato dispostos a ceder o lugar a uma mulher caso percebessem que ela está grávida, a cidade de Busan lançou o 'Pink Light'".
+O leitor NFC informa o evento ao servidor, o servidor consulta todos os
+assentos conectados e acende o LED de **todos os assentos disponíveis**.
+Quando qualquer sensor de um assento detecta que uma pessoa sentou, o LED
+desse assento apaga imediatamente.
 
-Assim, o dispositivo seria uma forma de alertar os passageiros quando devem ceder seu lugar para outro passageiro, sem necessidade de perguntar e sem que seja necessário pedir. É uma tecnologia relativamente barata de ser implementada como política pública que incentiva o bem-estar de diferentes grupos sociais com direito ao assento preferencial, como por exemplo: Pessoas com deficiência, pessoas com crianças de colo, idosos, obesos, gestantes, pessoas com restrição de mobilidade e autistas.
+## 🗺️ Motivação
 
-## 🗂️ Organização do repositório e primeiros passos:
+A iniciativa foi inspirada no sistema usado no metrô da Coreia do Sul e no
+aplicativo
+[Pink Light](https://play.google.com/store/apps/details?id=kr.doweb.pinklight&hl=pt_BR).
+O objetivo é ajudar passageiros a perceber a chegada de uma pessoa com direito
+ao assento preferencial, sem exigir uma solicitação verbal.
 
-## 👩‍🦯‍➡️ História de usuário (exemplificação de como funcionaria o projeto):
+O projeto considera pessoas com deficiência, pessoas com crianças de colo,
+idosos, obesos, gestantes, pessoas com mobilidade reduzida e pessoas autistas.
+Como referências técnicas, foram consultados o
+[CardForRPG](https://github.com/Felipe256/CardForRPG), o
+[SMAC](https://github.com/Anemaygi/SMAC/tree/master/projeto) e o
+[estudo de caso do Pink Light](https://publicadministration.un.org/unpsa/en/Home/Case-Details-Public?PreScreeningGUID=399fae3c-5002-4a93-af5e-88691160b86c&ReadOnly=Yes).
 
-### usuário com direito ao assento preferencial
+O sistema auxilia a sinalização, mas não substitui a colaboração dos
+passageiros. Em uma aplicação real, lotação, visibilidade dos LEDs e acesso ao
+leitor NFC também precisam ser considerados.
 
- 1. ao entrar no trem o usuario deve ter em mãos o acessorio (cartão ou chaveiro) que tem informações sobre o assento preferencial
- 2. o usuário deve encostar o acessório no dispositivo no sensor de nfc (requisito esse estar localizado com fácil acesso)
- 3. o usuário verá a luz acima dos assentos liberados acender
-     3.5 Se não houverem assentos livres, os passageiros ouviram o anuncio da chegada do passageiro preferencial e necessidade de liberação de assentos preferenciais
- 4. o usuário pode ir até o assento, necessitando possivelmente que outros passageiros deem lugar sabendo da presença do passageiro preferencial
+## 👩‍🦯 Fluxo de uso do MVP
 
+1. A pessoa aproxima um cartão ou chaveiro autorizado do PN532.
+2. O leitor envia ao servidor um evento NFC identificado.
+3. O servidor consulta todos os assentos registrados.
+4. Cada assento disponível recebe o comando para acender o LED por até
+   10 segundos.
+5. LEDs já acesos permanecem com o prazo original; uma nova leitura NFC não
+   reinicia o temporizador.
+6. Assentos ocupados não são ativados.
+7. Quando qualquer sensor detecta ocupação, o LED correspondente apaga
+   imediatamente e o servidor recebe o motivo `occupied`.
+8. Se ninguém sentar, o LED apaga automaticamente após 10 segundos e o
+   servidor recebe o motivo `timeout`.
 
-### usuários sem acesso ao assento preferencial
+Se não houver assento disponível, o leitor NFC produz o feedback sonoro de
+erro. Anúncio no sistema de som do vagão ainda não faz parte do MVP.
 
- 1. ao chegar no trem, se houver um assento vazio e nao houver pessoas preferenciais usuário pode se sentar no assento preferencial
- 2. o usuário fica tranquilo e quando chega na proxima estação se houver um usuario que deseja usar o assento preferencial ele ouve um anúncio
- 3. o usuario deve se levantar, permitindo que a luz de assento livre ligue
- 4. o usuario com direito ao assento verá o assento livre e se sentará nele
+Quando uma pessoa deixa um assento, ele volta a ser considerado disponível
+depois que a janela de ocupação expira. O LED **não** acende automaticamente:
+ele só será ligado após um novo evento NFC autorizado.
 
+## 🗂️ Arquitetura do repositório
 
-### preocupação com funcionalidade
+| Bloco | Arquivos principais | Responsabilidade |
+| --- | --- | --- |
+| Leitor NFC | `ESP_NFC/src/esp_comunicando.py` | PN532, autorização do UID, buzzer e comunicação TCP |
+| Teste isolado do NFC | `ESP_NFC/src/start.py` e `nfc_buzzer.py` | Teste de bancada sem Wi-Fi e sem servidor |
+| Assentos | `ESP_Assentos/src/sensor_v1.py` e `seat_state.py` | Sensores, janela de ocupação, LED e cliente TCP |
+| Servidor | `servidor/src/pc_server.py` | Registro dos dispositivos, consulta e ativação dos assentos |
+| Testes | `tests/` | Estado do assento, protocolo e concorrência do servidor |
 
-- importante reforçar que a implementação do projeto envolve também a mudança no comportamento do usuário. Se implementado na vida real, o sucesso do projeto depende das pessoas cederem seus assentos. 
+O firmware de produção do NFC é `esp_comunicando.py`, gravado no dispositivo
+como `/main.py`. Os arquivos `start.py` e `nfc_buzzer.py` são apenas para teste
+isolado do PN532 e não participam do fluxo integrado.
 
-- O projeto em suas primeiras versões tem impedimentos para seu funcionamento em horários de pico. Os motivos são 
-1. limitação no número de assentos
-2. Possível lotação pode impedir o usuário de chegar ate o sensor do cartão. A lotação tambem pode impedir o usuário de enxergar a luz que sinaliza o assento livre, bem como impedir o deslocamento do usuario até lá.
+## 🔧 Hardware e pinagem
 
-## ⚙️ Como foi feito o projeto:
+### Leitor NFC
 
-### 🔧 Componentes:
-O projeto utiliza:
-- 3 ESP32-C3 mini
-- 1 PN532
-- 1 Buzzer
-- 4 Módulo sensor de toque capacitivo TTP223B
-- 2 LED
-- 2 Protoboard
-- N Jumper
-- PC ou outro dispositivo para atuar como servidor
+| Componente | Pino do componente | ESP32-C3 |
+| --- | --- | --- |
+| PN532 | SDA | GPIO8 |
+| PN532 | SCL | GPIO9 |
+| PN532 | VCC | 3V3 |
+| PN532 | GND | GND |
+| Buzzer passivo | positivo | GPIO4 |
+| Buzzer passivo | negativo | GND |
 
-**código em micropython e comunicação via TCP/IP com necessidade de os ESP32 e o Servidor se conectarem em mesma rede**
+O PN532 deve estar configurado em modo I²C e responder no endereço `0x24`.
 
-## 📖 Documentação do Código:
+### Cada assento
 
-### Estrutura do Projeto:
-O projeto está organizado em três blocos principais, cada um com uma função bem definida no funcionamento do sistema:
-- Módulo de leitura NFC: localizado em 'esp_comunicando.py' e 'nfc_buzzer.py'. Esse módulo é responsável por interagir com o leitor PN532, ler o UID de cartões ou chaveiros NFC e identificar se o identificador corresponde a um usuário autorizado, além da comunicação com o servidor. Também há uma camada de inicialização em 'start.py', que chama o fluxo principal do leitor.
-- Módulo de assentos: implementado em 'sensor_v1.py' e 'seat_state.py'. Aqui ficam os sensores de toque capacitivo, o LED de indicação e a lógica de estado do assento. O código decide se o assento está ocupado ou disponível e controla se o LED deve permanecer aceso ou apagado.
-- Servidor central: implementado em 'pc_server.py'. Esse componente funciona como cérebro do sistema. Ele recebe mensagens dos ESPs, mantém um registro dos assentos conectados, consulta o estado deles e decide qual assento deve receber o sinal de indicação após um evento NFC.
+| Componente | ESP32-C3 | Estado ocupado |
+| --- | --- | --- |
+| Sensor capacitivo 1 | GPIO10 | nível alto (`1`) |
+| Sensor capacitivo 2 | GPIO7 | nível alto (`1`) |
+| LED do assento | GPIO5 | — |
 
-**A organização do repositório segue essa divisão: uma pasta para o ESP de NFC, outra para o ESP dos assentos e outra para o servidor. Além disso, há arquivos de configuração local, como esp_config.py, que definem Wi-Fi, IP do servidor e parâmetros específicos de cada dispositivo.**
+O MVP completo utiliza:
 
-### Responsabilidade de cada ESP32:
-O projeto utiliza dois ESP32 com papéis distintos:
+- 3 ESP32-C3 SuperMini;
+- 1 PN532;
+- 1 buzzer passivo;
+- 4 sensores capacitivos TTP223B;
+- 2 LEDs com resistores adequados;
+- protoboards, jumpers e um computador para o servidor.
 
-ESP32 do leitor NFC: é o dispositivo responsável por detectar a presença de um cartão ou chaveiro próximo ao leitor PN532. Quando um cartão é lido, ele verifica se o UID está na lista de identificadores autorizados. Se for um usuário válido, ele envia uma mensagem para o servidor informando que um evento NFC ocorreu. Também pode acionar um buzzer para fornecer feedback sonoro ao usuário.
+## 🪑 Estado dos assentos
 
-ESP32 dos assentos: é o dispositivo ligado fisicamente ao assento. Ele monitora dois sensores de toque capacitivo para verificar se alguém está sentado.
-Mantém um estado interno do assento, usando uma janela de leituras para evitar flutuações momentâneas. Controla um LED que indica visualmente se o assento está livre ou foi selecionado para um passageiro preferencial. Responde a comandos vindos do servidor, como consultar status do assento ou acender/apagar o LED.
+Cada ESP de assento lê GPIO10 e GPIO7 a cada 500 ms. O estado consolidado usa
+uma janela deslizante de 10 amostras:
 
-OBS: nesse projeto foi utilizado 3 ESP32, 1 leitor NFC e 2 dos assentos.
+- se qualquer sensor tiver uma leitura alta dentro da janela, o estado é
+  `ocupado`;
+- após 10 leituras livres desde a última detecção, equivalentes a 5 segundos,
+  o estado volta para `disponível`;
+- após a inicialização, o assento permanece conservadoramente como `ocupado`
+  até completar as primeiras 10 leituras livres.
 
-### Fluxo de comunicação entre os dispositivos
-A comunicação entre os dispositivos é feita via TCP/IP, usando mensagens em formato JSON. O fluxo principal funciona assim:
+O LED só aceita ativação quando o assento está disponível e o LED ainda está
+apagado. Depois de ativado:
 
-- Inicialização:
-  - Cada ESP32 conecta-se à rede Wi-Fi configurada;
-  - O ESP32 dos assentos se conecta ao servidor e envia um registro com seu identificador de assento;
-  - O servidor armazena essa conexão e passa a considerar aquele assento disponível para futuras decisões;
+- permanece aceso por no máximo 10 segundos;
+- uma nova ativação não renova o prazo;
+- apaga imediatamente se GPIO10 ou GPIO7 detectar ocupação;
+- apaga ao perder a conexão com o servidor.
 
-- Leitura do NFC.
-  - O ESP32 de NFC lê o UID do cartão aproximado ao leitor.
-  - Se o UID estiver autorizado, ele envia uma mensagem ao servidor, indicando que um passageiro preferencial foi detectado.
+## 🌐 Comunicação
 
-- Decisão do servidor
-  - O servidor recebe a mensagem do NFC e procura entre os assentos registrados aquele que está disponível.
-  - Para isso, ele consulta cada assento e verifica se ele está livre.
-Quando encontra um assento adequado, envia um comando para acender o LED desse assento.
+Todos os dispositivos e o computador precisam estar na mesma rede. O servidor
+escuta em `0.0.0.0:5000`, enquanto os ESPs usam `HOST` para alcançar o IPv4 do
+computador nessa rede.
 
-- Atualização do estado do assento
-  - O ESP32 do assento recebe o comando e atualiza seu estado interno.
-  - Enquanto a pessoa permanece sentada, os sensores capacitivos continuam detectando ocupação e o LED é desligado quando o assento passa a ser considerado ocupado.
-  - O servidor pode então continuar a acompanhar o estado do assento por meio das respostas recebidas.
+A comunicação utiliza TCP persistente e mensagens JSON delimitadas por quebra
+de linha. Os comandos de assento usam `request_id`, permitindo correlacionar
+respostas mesmo com vários clientes conectados. O servidor considera uma
+consulta sem resposta por 1 segundo como falha e remove aquela conexão.
 
-- Feedback e reutilização
-  - O sistema fica preparado para novos eventos: quando um novo usuário NFC chega, o servidor repete o processo e tenta ativar outro assento disponível.
+O NFC envia `ping` a cada 2 segundos. O `pong` correspondente confirma a
+conexão e transporta a disponibilidade do PN532 por meio de `reader_ready`.
+Os assentos não enviam heartbeat periódico: eles permanecem conectados,
+respondem às consultas do servidor e emitem eventos quando o LED apaga.
 
-Esse fluxo torna o projeto escalável e modular: o leitor NFC não precisa conhecer diretamente a lógica dos assentos; ele apenas notifica o servidor, e o servidor coordena a decisão com base no estado de todos os assentos conectados.
+### Mensagens do protocolo
 
-**Esquema de mensagens:**
+| Mensagem | Fluxo | Finalidade |
+| --- | --- | --- |
+| `seat_register` | Assento → servidor | Registrar o `seat_id` |
+| `get_status` | Servidor → assento | Consultar ocupação e estado do LED |
+| `seat_status` | Assento → servidor | Responder `status`, `led_on` e tempo restante |
+| `set_led` | Servidor → assento | Solicitar ativação ou desativação do LED |
+| `set_led_result` | Assento → servidor | Confirmar ou rejeitar o comando |
+| `seat_led_state` | Assento → servidor | Informar desligamento por `occupied` ou `timeout` |
+| `nfc_register` | NFC → servidor | Registrar `device_id` e `reader_ready` |
+| `nfc_register_ack` | Servidor → NFC | Confirmar o registro |
+| `nfc_presented` | NFC → servidor | Enviar `event_id` e índice do cartão autorizado |
+| `nfc_result` | Servidor → NFC | Informar resultado e `seat_ids` ativados |
+| `ping` / `pong` | NFC ↔ servidor | Verificar a sessão a cada 2 segundos |
 
-| **Mensagem**     | **Fluxo**              | **Função**           |
-| ---------------- | ---------------------- | -------------------- |
-| `seat_register`  | ESP Assento → Servidor | Registrar assento    |
-| `get_status`     | Servidor → ESP Assento | Consultar estado     |
-| `seat_status`    | ESP Assento → Servidor | Informar estado      |
-| `set_led`        | Servidor → ESP Assento | Controlar LED        |
-| `set_led_result` | ESP Assento → Servidor | Confirmar comando    |
-| `nfc_*`          | ESP NFC → Servidor     | Informar leitura NFC |
+O servidor ainda aceita mensagens legadas no formato `nfc_1`, `nfc_2` etc.,
+mas o firmware de produção usa `nfc_presented`.
 
-### Bibliotecas Utilizadas
+## ⚙️ Configuração
 
-- Machine: usada em código para MicroPython no ESP32. Ela permite acessar recursos de hardware diretamente, como:
-  - pinos digitais (Pin);
-  - comunicação I2C (I2C);
-  - PWM (PWM).
-No projeto, ela é essencial para:
-  - configurar o leitor NFC PN532;
-  - controlar o buzzer;
-  - ler os sensores de toque e acionar o LED.
- 
-- Network: é usada para gerenciar a conexão Wi-Fi no ESP32. Com ela, o dispositivo:
-  - ativa a interface Wi-Fi;
-  - conecta-se à rede;
-  - verifica se está conectado.
-No projeto, ela é usada para permitir que os ESP32 se comuniquem com o servidor via rede.
+Nunca publique SSID, senha ou endereços privados reais no README ou em commits.
+Use os arquivos de exemplo como base:
 
-- Socket: é usada para criar conexões de rede TCP/IP. Ela permite que:
-  - o ESP32 abra uma conexão com o servidor;
-  - o servidor aceite conexões de múltiplos dispositivos;
-  - as mensagens JSON sejam transmitidas entre os módulos.
-No projeto, ela é usada principalmente no servidor e também no ESP32 para enviar e receber dados.
+```powershell
+Copy-Item .\ESP_NFC\src\esp_config.example.py .\ESP_NFC\src\esp_config.py
+Copy-Item .\ESP_Assentos\src\esp_config.example.py .\ESP_Assentos\src\esp_config.py
+```
 
-- Uasyncio: permite escrever código que executa tarefas simultaneamente, como no projeto, que ela é importante no ESP32 dos assentos porque o código precisa lidar com várias operações ao mesmo tempo.
+Configuração do NFC:
 
-- Json: usada para serializar e desserializar mensagens no formato JSON. Isso é importante porque nosso sistema troca dados estruturados. Ela transforma dicionários Python em texto e vice-versa.
+```python
+SSID = "NOME_DA_REDE"
+PASSWORD = "SENHA_DA_REDE"
+HOST = "192.168.0.100"
+```
 
-- Time: usada para controle temporal.
+Configuração de cada assento:
 
-- Micropython.const: usada para definir constantes de forma eficiente no MicroPython. Ela ajuda a criar valores simbólicos para comandos do PN532 e outras configurações fixas.
+```python
+SSID = "NOME_DA_REDE"
+PASSWORD = "SENHA_DA_REDE"
+HOST = "192.168.0.100"
+SEAT_ID = "assento_1"
+```
 
-- Threading: usada no servidor para lidar com várias conexões simultaneamente. Com ela, o servidor consegue:
-  - atender múltiplos clientes ao mesmo tempo;
-  - processar mensagens de diferentes dispositivos;
-  - manter a comunicação sem bloquear o fluxo principal.
- 
-### Outros recursos de software utilizados
-Além da lógica principal de leitura NFC, controle de assentos e comunicação com o servidor, o sistema também faz uso de alguns recursos de software que aumentam sua robustez, organização e facilidade de manutenção.
+Cada placa de assento precisa de um `SEAT_ID` exclusivo. Prepare uma cópia
+local de `esp_config.py` para cada placa e verifique `git status` antes de
+qualquer commit para não publicar credenciais.
 
-Primeiramente, o projeto utiliza mecanismos de gerenciamento de estado para representar o comportamento de cada assento. Isso permite controlar se o assento está ocupado ou disponível, se o LED deve permanecer aceso e se uma solicitação de ativação foi aceita ou rejeitada. Esse controle é essencial para evitar inconsistências durante a execução.
+Os UIDs autorizados são definidos em `NFC_UUIDS`, dentro de
+`ESP_NFC/src/esp_comunicando.py`.
 
-Também foi empregado um modelo de programação assíncrona no ESP32 de assentos, por meio de uasyncio, o que permite que o dispositivo monitore os sensores, mantenha a conexão com o servidor e responda a comandos sem travar o sistema. Essa abordagem é importante porque o hardware embarcado precisa lidar com múltiplas tarefas ao mesmo tempo.
+## 📤 Gravação nos ESP32
 
-No servidor, o projeto utiliza concorrência com threading, além de mecanismos de bloqueio, para atender várias conexões simultaneamente. Isso é especialmente útil quando há mais de um dispositivo conectado ao mesmo tempo, como vários ESP32 de assentos ou eventos de NFC ocorrendo em sequência.
+Instale o `mpremote` e feche o backend do Thonny antes de acessar as portas:
 
-Outro recurso relevante é o tratamento de erros e reconexão. O sistema é preparado para lidar com falhas de rede, desconexões temporárias e respostas inesperadas, tentando restabelecer a comunicação automaticamente sempre que possível. Isso aumenta a confiabilidade do funcionamento em ambiente real.
+```powershell
+python -m pip install mpremote
+```
 
-O projeto também depende de arquivos de configuração específicos para cada dispositivo, como dados de rede Wi-Fi, endereço do servidor e identificadores de assento. Essa separação facilita a adaptação do sistema para diferentes ambientes sem alterar o código principal.
+As portas abaixo representam a montagem usada durante o desenvolvimento.
+Confirme as portas do seu computador antes de gravar:
 
-Por fim, o repositório conta com testes automatizados, que verificam o comportamento do servidor em cenários como registro de assentos, controle de timeout, ativação de LED e tratamento de mensagens inválidas. Esses testes ajudam a garantir que as mudanças no software não comprometam o funcionamento do sistema.
+- COM3: leitor NFC;
+- COM4: Alberto;
+- COM5: Bete.
 
-## 📢 Futuras Implementações:
+Grave o NFC:
 
-- Interação de múltiplos módulos de leitor de NFC com um só servidor no vagão
-- Mensagem mais amigável por meio de um alto falante (integrado ou não com o sistema de som do trem)
-- Diferentes meios de detecção do NFC (Cartões, chaveiros, colares)
-- Detecção avançada, por meio de sensores com maior alcance nas portas, assim não precisando de contato direto com o leitor]
-- Confirmação visual de deteção no meio (luz piscando, vibração, etc)
-- Sistema de controle para detectar se uma pessoa sentada no assento preferencial de fato necessita dele ou não (por meio de detecção no assento)
+```powershell
+python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_config.py :esp_config.py
+python -m mpremote connect COM3 fs cp .\ESP_NFC\src\esp_comunicando.py :main.py
+```
+
+Grave Alberto usando a configuração preparada para esse assento:
+
+```powershell
+python -m mpremote connect COM4 fs cp C:\caminho\alberto\esp_config.py :esp_config.py
+python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\seat_state.py :seat_state.py
+python -m mpremote connect COM4 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
+```
+
+Grave Bete usando sua própria configuração:
+
+```powershell
+python -m mpremote connect COM5 fs cp C:\caminho\bete\esp_config.py :esp_config.py
+python -m mpremote connect COM5 fs cp .\ESP_Assentos\src\seat_state.py :seat_state.py
+python -m mpremote connect COM5 fs cp .\ESP_Assentos\src\sensor_v1.py :main.py
+```
+
+Reinicie as placas após conferir os arquivos:
+
+```powershell
+python -m mpremote connect COM3 reset
+python -m mpremote connect COM4 reset
+python -m mpremote connect COM5 reset
+```
+
+## ▶️ Execução
+
+No diretório raiz, inicie apenas uma instância do servidor:
+
+```powershell
+python .\servidor\src\pc_server.py
+```
+
+Saída esperada:
+
+```text
+Servidor ouvindo na porta 5000
+Leitor NFC registrado: nfc_reader (...)
+PN532 pronto: nfc_reader
+Assento registrado: Alberto (...)
+Assento registrado: Bete (...)
+```
+
+Ao aproximar um cartão autorizado com os dois assentos disponíveis:
+
+```text
+NFC recebido: nfc_1 = 1
+LED ativado no assento Alberto; desligamento em 10 s
+LED ativado no assento Bete; desligamento em 10 s
+```
+
+Quando uma pessoa sentar:
+
+```text
+LED apagado no assento Alberto: occupied
+```
+
+## ✅ Testes
+
+Execute a suíte a partir da raiz:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+A suíte atual contém 18 testes cobrindo:
+
+- janela de ocupação dos dois sensores;
+- ativação e desligamento do LED;
+- desligamento imediato ao detectar ocupação;
+- timeout do LED;
+- registro e substituição de conexões;
+- correlação por `request_id`;
+- ativação de todos os assentos disponíveis;
+- concorrência entre eventos NFC;
+- registro e heartbeat do leitor NFC.
+
+Os sensores, LEDs, buzzer e PN532 também precisam de validação física após a
+gravação.
+
+## 🩺 Diagnóstico
+
+### Os ESPs não conectam ao servidor
+
+- confirme que todos estão na mesma rede;
+- use no `HOST` o IPv4 do computador acessível pelos ESPs;
+- libere a porta TCP 5000 no firewall;
+- verifique se existe apenas uma instância de `pc_server.py`;
+- confirme que o servidor está escutando em `0.0.0.0:5000`.
+
+No Windows, consulte a porta com:
+
+```powershell
+Get-NetTCPConnection -LocalPort 5000
+```
+
+### O PN532 não responde
+
+Se o console mostrar `PN532 initialization deferred` ou
+`PN532 still unavailable`, confira:
+
+- alimentação em 3V3 e GND;
+- SDA em GPIO8 e SCL em GPIO9;
+- PN532 configurado para I²C;
+- endereço esperado `0x24`.
+
+A ausência de cartão não faz o PN532 desaparecer do barramento; esse erro
+indica falha de comunicação com o módulo, montagem ou alimentação.
+
+### O firmware para ao abrir o Thonny
+
+O Thonny pode interromper o `/main.py` ao assumir a porta serial. Durante o
+MVP, deixe o backend desconectado. Depois de usar o REPL, desconecte o Thonny e
+reinicie a placa.
+
+## 📢 Próximas evoluções
+
+- integrar o sistema ao alto-falante do vagão;
+- adicionar confirmação visual no leitor NFC;
+- suportar múltiplos leitores NFC no mesmo vagão;
+- avaliar sensores de presença com maior alcance;
+- criar monitoramento e painel operacional;
+- ampliar os testes físicos de perda de rede e falhas do barramento I²C.
