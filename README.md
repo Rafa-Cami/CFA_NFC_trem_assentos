@@ -190,3 +190,10 @@ Por fim, o repositório conta com testes automatizados, que verificam o comporta
 - Detecção avançada, por meio de sensores com maior alcance nas portas, assim não precisando de contato direto com o leitor]
 - Confirmação visual de deteção no meio (luz piscando, vibração, etc)
 - Sistema de controle para detectar se uma pessoa sentada no assento preferencial de fato necessita dele ou não (por meio de detecção no assento)
+
+## 🔍 Como visualizar o site com nosso pitch?
+
+- Clone o repositório localmente;
+- Instale a extensão "Live Server";
+- No documento landing_page/index.html, com o botão direito, clique em "Open with Live Server";
+- Prontinho, nosso site será aberto em seu navegador padrão!
